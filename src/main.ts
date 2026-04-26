@@ -591,6 +591,45 @@ function main() {
     keys[e.code] = false
   })
 
+  function setTouchKey(button: HTMLButtonElement, on: boolean) {
+    const code = button.dataset.key
+    if (!code) {
+      return
+    }
+    keys[code] = on
+    button.classList.toggle('is-pressed', on)
+  }
+
+  const touchButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.touch-btn[data-key]'))
+  for (const button of touchButtons) {
+    button.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      button.setPointerCapture(e.pointerId)
+      setTouchKey(button, true)
+    })
+    button.addEventListener('pointerup', (e) => {
+      e.preventDefault()
+      setTouchKey(button, false)
+      if (button.hasPointerCapture(e.pointerId)) {
+        button.releasePointerCapture(e.pointerId)
+      }
+    })
+    button.addEventListener('pointercancel', () => {
+      setTouchKey(button, false)
+    })
+    button.addEventListener('lostpointercapture', () => {
+      setTouchKey(button, false)
+    })
+    button.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+    })
+  }
+  window.addEventListener('blur', () => {
+    for (const button of touchButtons) {
+      setTouchKey(button, false)
+    }
+  })
+
   let last = performance.now() / 1000
 
   function step(t: number) {
