@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sigge hoppar</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="hud" aria-hidden="true">
+        <p id="hud-title">Sigge hoppar</p>
+        <p id="hud-hint">Piltangenter: framåt / bakåt / sväng · mellanrum hoppar · WASD fungerar också</p>
+        <p id="hud-rev" class="hud-rev">Kod: rod-basic+skutt+10</p>
+        <div id="energy-wrap">
+          <span>Energi (morötter)</span>
+          <div id="energy-bar-outer"><div id="energy-bar"></div></div>
+        </div>
+        <p id="hud-fox" class="hud-fox--hidden">Räv! Spring till kaninburen…</p>
+        <p id="hud-safe" class="hud-safe--hidden">Trygg i buren</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
