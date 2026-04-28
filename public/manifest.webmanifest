@@ -1,11 +1,11 @@
 {
-  "name": "Sigge hoppar",
-  "short_name": "Sigge",
-  "start_url": "/sigge-hoppar/",
-  "scope": "/sigge-hoppar/",
+  "name": "99 nätter på kronan",
+  "short_name": "99 nätter",
+  "start_url": "/99-natter-pa-kronan/",
+  "scope": "/99-natter-pa-kronan/",
   "display": "fullscreen",
   "orientation": "landscape",
   "background_color": "#0a120a",
   "theme_color": "#0a120a",
-  "description": "Three.js-spel med Sigge i tradgarden."
+  "description": "Three.js-spel med Sigge, nattcykler och rovdjur i tradgarden."
 }

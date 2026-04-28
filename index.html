@@ -6,21 +6,27 @@
     <meta name="theme-color" content="#0a120a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Sigge hoppar" />
+    <meta name="apple-mobile-web-app-title" content="99 nätter på kronan" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <title>Sigge hoppar</title>
+    <title>99 nätter på kronan</title>
   </head>
   <body>
     <div id="app">
       <div id="hud" aria-hidden="true">
-        <p id="hud-title">Sigge hoppar</p>
+        <p id="hud-title">99 nätter på kronan</p>
         <p id="hud-hint">Piltangenter/WASD eller touchkontroller · mellanrum hoppar</p>
-        <p id="hud-rev" class="hud-rev">Kod: rod-basic+skutt+11</p>
+        <p id="hud-rev" class="hud-rev">Kod: natter-katt-gear+12</p>
+        <div id="survival-wrap">
+          <span>Nätter: <strong id="night-count">0</strong></span>
+          <span id="cycle-state">Gryning</span>
+          <span id="item-status">Rustning 0/4</span>
+        </div>
         <div id="energy-wrap">
           <span>Energi (morötter)</span>
           <div id="energy-bar-outer"><div id="energy-bar"></div></div>
         </div>
-        <p id="hud-fox" class="hud-fox--hidden">Räv! Spring till kaninburen…</p>
+        <p id="hud-pickup" class="hud-pickup--hidden"></p>
+        <p id="hud-fox" class="hud-fox--hidden">Räv eller katt! Spring till kaninburen…</p>
         <p id="hud-safe" class="hud-safe--hidden">Trygg i buren</p>
         <p id="hud-gameover" class="hud-gameover--hidden">Game over</p>
       </div>
@@ -35,8 +41,8 @@
       </div>
       <div id="start-screen" class="mobile-overlay mobile-overlay--hidden">
         <div class="mobile-panel">
-          <p class="mobile-panel-title">Sigge hoppar</p>
-          <p>Spela i liggande helskärm.</p>
+          <p class="mobile-panel-title">99 nätter på kronan</p>
+          <p>Överlev så många nätter som möjligt.</p>
           <button id="start-fullscreen" type="button">Starta spelet</button>
         </div>
       </div>
@@ -49,7 +55,7 @@
       <div id="gameover-dialog" class="gameover-dialog--hidden" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
         <div class="gameover-panel">
           <p id="gameover-title">Game over</p>
-          <p>Sigge behöver mer energi.</p>
+          <p id="gameover-detail">Sigge behöver mer energi.</p>
           <button id="restart-game" type="button">Starta om</button>
         </div>
       </div>

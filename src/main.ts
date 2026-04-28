@@ -16,19 +16,50 @@ const FOX_TIMER_MIN = 8
 const FOX_TIMER_MAX = 18
 const FOX_SNIFF_TIME = 2.7
 const FOX_SNIFF_DIST = 1.35
+const CAT_SPD = 5.35
+const CAT_TIMER_MIN = 13
+const CAT_TIMER_MAX = 28
+const CAT_SNIFF_TIME = 2.2
+const CAT_SNIFF_DIST = 1.2
 const CARROT_PICK = 0.85
+const CARROT_REGROW_MIN = 18
+const CARROT_REGROW_MAX = 28
 const FOX_BITE = 0.74
+const CAT_BITE = 0.68
 const ENERGY_MAX = 100
 const ENERGY_PER_CARROT = 18
 const ENERGY_DRAIN_PER_SEC = 1.4
 const FOX_BITE_DAMAGE = 24
+const CAT_BITE_DAMAGE = 17
 const FOX_BITE_COOLDOWN = 1.15
+const CAT_BITE_COOLDOWN = 0.9
 const FOX_BITE_ANIM_TIME = 0.42
+const CAT_BITE_ANIM_TIME = 0.32
 const FOX_ATTACK_DIST = 0.68
+const CAT_ATTACK_DIST = 0.58
 const START_ENERGY = 45
+const DAY_SECONDS = 60
+const NIGHT_SECONDS = 30
+const CYCLE_SECONDS = DAY_SECONDS + NIGHT_SECONDS
+const TWILIGHT_SECONDS = 8
+const PICKUP_PICK = 0.85
+const PICKUP_MAX = 6
+const PICKUP_SPAWN_MIN = 9
+const PICKUP_SPAWN_MAX = 17
+const ARMOR_MAX = 4
+const SPEED_POTION_SECONDS = 16
+const SHIELD_POTION_SECONDS = 12
 
 /* --- AABB (Vector2: x, z) --- */
 type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
+type CarrotPlant = {
+  root: THREE.Group
+  edible: THREE.Group
+  greens: THREE.Group
+  picked: boolean
+  regrowLeft: number
+  regrowTotal: number
+}
 type RampSpec = {
   x: number
   zBottom: number
@@ -44,6 +75,22 @@ type HutchSpec = {
   doorW: number
 }
 type FoxMode = 'hidden' | 'chase' | 'sniff' | 'leave'
+type PickupKind = 'light-armor' | 'heavy-armor' | 'energy-potion' | 'speed-potion' | 'shield-potion'
+type Pickup = {
+  group: THREE.Group
+  kind: PickupKind
+  ttl: number
+}
+
+declare global {
+  interface Window {
+    __siggeDebug?: {
+      setCycleClock: (seconds: number) => void
+      setEnergy: (value: number) => void
+      spawnPickup: (kind?: PickupKind) => void
+    }
+  }
+}
 
 function aabb2ContainsXZ(b: Box3XZ, x: number, z: number): boolean {
   return x >= b.min.x && x <= b.max.x && z >= b.min.y && z <= b.max.y
@@ -87,6 +134,15 @@ function resolveCircleAabb2(
     return { x: cx + nx * r, z: cz + nz * r }
   }
   return { x, z }
+}
+
+function setCarrotPlantGrowth(plant: CarrotPlant, growth: number) {
+  const g = THREE.MathUtils.clamp(growth, 0, 1)
+  plant.edible.visible = g >= 0.98
+  plant.greens.visible = g > 0.03
+  plant.greens.scale.setScalar(0.28 + g * 0.72)
+  plant.greens.position.y = -0.24 * (1 - g)
+  plant.edible.scale.setScalar(0.86 + g * 0.14)
 }
 
 function makeFurTexture() {
@@ -149,6 +205,19 @@ function buildScene() {
   const sun = new THREE.DirectionalLight(0xfffaec, 1.0)
   sun.position.set(20, 32, 12)
   scene.add(sun)
+  const moonLight = new THREE.DirectionalLight(0xb8c8ff, 0.0)
+  moonLight.position.set(-18, 26, -12)
+  scene.add(moonLight)
+  const sunOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.72, 24, 16),
+    new THREE.MeshBasicMaterial({ color: 0xfff1a6, fog: false }),
+  )
+  const moonOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.52, 24, 16),
+    new THREE.MeshBasicMaterial({ color: 0xd8ddff, fog: false }),
+  )
+  scene.add(sunOrb, moonOrb)
+  const windowLights: THREE.PointLight[] = []
 
   // Lawn
   const groundGeo = new THREE.PlaneGeometry(50, 50)
@@ -159,20 +228,23 @@ function buildScene() {
   ground.position.y = GROUND
   scene.add(ground)
 
-  // Morotsland: fyrkantig jordbädd med raka planteringsrader.
+  // Morotsland: fyrkantiga jordbäddar med raka planteringsrader.
   const carrotPatchCenter = new THREE.Vector2(8, -6)
-  const carrotPatchW = 8.6
-  const carrotPatchD = 5.8
+  const farCarrotPatchCenter = new THREE.Vector2(-12.2, -9.2)
   const soilMat = new THREE.MeshStandardMaterial({ color: 0x5a3821, roughness: 0.96 })
   const soilDarkMat = new THREE.MeshStandardMaterial({ color: 0x3d2819, roughness: 0.98 })
-  const patch = new THREE.Mesh(new THREE.BoxGeometry(carrotPatchW, 0.08, carrotPatchD), soilMat)
-  patch.position.set(carrotPatchCenter.x, 0.04, carrotPatchCenter.y)
-  scene.add(patch)
-  for (const rowZ of [-1.85, -0.62, 0.62, 1.85]) {
-    const row = new THREE.Mesh(new THREE.BoxGeometry(carrotPatchW - 0.6, 0.035, 0.16), soilDarkMat)
-    row.position.set(carrotPatchCenter.x, 0.095, carrotPatchCenter.y + rowZ)
-    scene.add(row)
+  const addCarrotPatchBed = (center: THREE.Vector2, w: number, d: number, rows: number[]) => {
+    const patch = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), soilMat)
+    patch.position.set(center.x, 0.04, center.y)
+    scene.add(patch)
+    for (const rowZ of rows) {
+      const row = new THREE.Mesh(new THREE.BoxGeometry(w - 0.6, 0.035, 0.16), soilDarkMat)
+      row.position.set(center.x, 0.095, center.y + rowZ)
+      scene.add(row)
+    }
   }
+  addCarrotPatchBed(carrotPatchCenter, 8.6, 5.8, [-1.85, -0.62, 0.62, 1.85])
+  addCarrotPatchBed(farCarrotPatchCenter, 7.2, 4.8, [-1.45, -0.48, 0.48, 1.45])
 
   // Hedges (perimeter)
   const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x1f5a24, roughness: 0.8 })
@@ -234,6 +306,7 @@ function buildScene() {
   addCurvedPath([[-10.7, 12.9], [-6.6, 11.65], [-1.8, 9.45], [4.6, 7.55]], 0.74)
   addCurvedPath([[4.6, 7.55], [5.9, 4.0], [7.25, 0.4], [8.1, -2.6]], 0.64)
   addCurvedPath([[-3.6, 12.8], [-4.1, 14.1], [-3.75, 15.55], [-3.6, 16.9]], 0.7)
+  addCurvedPath([[-1.8, 9.45], [-5.2, 4.0], [-8.5, -2.8], [-11.6, -6.6]], 0.58)
 
   const patio = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.06, 3.2), pavingMat)
   patio.position.set(-8.7, 0.03, 14.45)
@@ -310,6 +383,21 @@ function buildScene() {
   addBush(5.5, 15.8, 1.2, true)
   addBush(18.4, 9.8, 1.08)
   addBush(11.5, -15.8, 1.25)
+  addTree(-15.6, -5.6, 0.72)
+  addTree(-8.4, -10.8, 0.68)
+  addTree(3.2, -15.7, 0.74)
+  addTree(13.8, -10.8, 0.7)
+  addTree(-2.6, 18.8, 0.66)
+  addTree(15.8, 16.4, 0.64)
+  addBush(-13.8, -6.4, 1.18, true)
+  addBush(-10.6, -3.6, 1.05)
+  addBush(-14.8, -12.6, 1.15)
+  addBush(-6.8, -8.5, 0.98, true)
+  addBush(0.8, -12.6, 1.1)
+  addBush(6.2, -15.8, 1.02, true)
+  addBush(14.9, 6.5, 1.0)
+  addBush(17.5, -6.8, 0.96, true)
+  addBush(-18.4, -2.2, 1.03)
 
   // Svensk enplansvilla: låg röd träpanel, vita omfattningar och inbyggt garage på ena gaveln.
   const houseW = 13
@@ -319,7 +407,13 @@ function buildScene() {
   const redMat = new THREE.MeshStandardMaterial({ color: 0xba2a20, roughness: 0.5 })
   const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf7f2e8, roughness: 0.55 })
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x3d332b, roughness: 0.7 })
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0x8db6c9, roughness: 0.18, metalness: 0.05 })
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x8db6c9,
+    emissive: 0xffb34d,
+    emissiveIntensity: 0,
+    roughness: 0.18,
+    metalness: 0.05,
+  })
   const garageMat = new THREE.MeshStandardMaterial({ color: 0xe9e3d8, roughness: 0.62 })
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x5c4030, roughness: 0.7 })
 
@@ -369,7 +463,10 @@ function buildScene() {
     const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.07, 0.11), whiteMat)
     crossH.position.copy(glass.position)
     crossH.position.z += dir * 0.012
-    houseG.add(trim, glass, crossV, crossH)
+    const windowLight = new THREE.PointLight(0xffb35a, 0, 6.2, 2)
+    windowLight.position.set(x, 1.56, z + dir * 0.4)
+    windowLights.push(windowLight)
+    houseG.add(trim, glass, crossV, crossH, windowLight)
   }
 
   const addGableWindow = (x: number, y: number, z: number) => {
@@ -377,7 +474,10 @@ function buildScene() {
     trim.position.set(x, y, z)
     const glass = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.62, 0.96), glassMat)
     glass.position.set(x - 0.015, y, z)
-    houseG.add(trim, glass)
+    const windowLight = new THREE.PointLight(0xffb35a, 0, 5.2, 2)
+    windowLight.position.set(x - 0.4, y, z)
+    windowLights.push(windowLight)
+    houseG.add(trim, glass, windowLight)
   }
 
   addWindow(-4.4, houseD / 2, 'front')
@@ -555,21 +655,23 @@ function buildScene() {
   }
 
   // Carrots
-  const carrots: THREE.Object3D[] = []
+  const carrots: CarrotPlant[] = []
   const carrotMat = new THREE.MeshStandardMaterial({ color: 0xe9781d, emissive: 0x1f0a00, roughness: 0.72 })
   const carrotTopMat = new THREE.MeshStandardMaterial({ color: 0xf28a24, roughness: 0.68 })
   const stemMat = new THREE.MeshStandardMaterial({ color: 0x286f22, roughness: 0.75 })
-  const makeCarrot = (lean: number) => {
-    const g = new THREE.Group()
+  const makeCarrot = (lean: number): CarrotPlant => {
+    const root = new THREE.Group()
+    const edible = new THREE.Group()
+    const greens = new THREE.Group()
 
     const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.18, 0.24, 12), carrotTopMat)
     shoulder.position.y = 0.18
-    g.add(shoulder)
+    edible.add(shoulder)
 
     const tip = new THREE.Mesh(new THREE.ConeGeometry(0.105, 0.34, 12), carrotMat)
     tip.rotation.x = Math.PI
     tip.position.y = 0.13
-    g.add(tip)
+    edible.add(tip)
 
     for (let i = 0; i < 7; i++) {
       const blade = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.44 + (i % 3) * 0.07, 5), stemMat)
@@ -577,31 +679,47 @@ function buildScene() {
       const tilt = 0.35 + (i % 2) * 0.18
       blade.position.set(Math.cos(angle) * 0.045, 0.43, Math.sin(angle) * 0.045)
       blade.rotation.set(Math.sin(angle) * tilt, angle, -Math.cos(angle) * tilt)
-      g.add(blade)
+      greens.add(blade)
     }
 
-    return g
+    root.add(edible, greens)
+    const plant = {
+      root,
+      edible,
+      greens,
+      picked: false,
+      regrowLeft: 0,
+      regrowTotal: 0,
+    }
+    setCarrotPlantGrowth(plant, 1)
+    return plant
   }
-  const carrotRows = [-1.85, -0.62, 0.62, 1.85]
-  const carrotCols = [-3.2, -1.6, 0, 1.6, 3.2]
-  for (let row = 0; row < carrotRows.length; row++) {
-    for (let col = 0; col < carrotCols.length; col++) {
-      if ((row === 0 && col === 4) || (row === 3 && col === 0)) {
-        continue
+  const addCarrots = (center: THREE.Vector2, rows: number[], cols: number[], skip: (row: number, col: number) => boolean) => {
+    for (let row = 0; row < rows.length; row++) {
+      for (let col = 0; col < cols.length; col++) {
+        if (skip(row, col)) {
+          continue
+        }
+        const plant = makeCarrot(row * 0.45 + col * 0.18)
+        const offsetX = ((row + col) % 2 === 0 ? -0.08 : 0.08)
+        const offsetZ = col % 2 === 0 ? 0.04 : -0.04
+        plant.root.position.set(
+          center.x + cols[col] + offsetX,
+          0.08,
+          center.y + rows[row] + offsetZ,
+        )
+        plant.root.rotation.y = ((row + col) % 3 - 1) * 0.08
+        scene.add(plant.root)
+        carrots.push(plant)
       }
-      const g = makeCarrot(row * 0.45 + col * 0.18)
-      const offsetX = ((row + col) % 2 === 0 ? -0.08 : 0.08)
-      const offsetZ = col % 2 === 0 ? 0.04 : -0.04
-      g.position.set(
-        carrotPatchCenter.x + carrotCols[col] + offsetX,
-        0.08,
-        carrotPatchCenter.y + carrotRows[row] + offsetZ,
-      )
-      g.rotation.y = ((row + col) % 3 - 1) * 0.08
-      scene.add(g)
-      carrots.push(g)
     }
   }
+  addCarrots(carrotPatchCenter, [-1.85, -0.62, 0.62, 1.85], [-3.2, -1.6, 0, 1.6, 3.2], (row, col) => (
+    (row === 0 && col === 4) || (row === 3 && col === 0)
+  ))
+  addCarrots(farCarrotPatchCenter, [-1.45, -0.48, 0.48, 1.45], [-2.55, -1.25, 0, 1.25, 2.55], (row, col) => (
+    (row === 1 && col === 0) || (row === 2 && col === 4)
+  ))
 
   // Sigge: root = logik, visual = kropp (skuttar ovanpå)
   const siggeG = new THREE.Group()
@@ -652,7 +770,19 @@ function buildScene() {
   nose.position.set(0, 0.535, 0.655)
 
   const siggeTail = makeSiggeTail(siggeMat)
-  siggeVisual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail)
+  const siggeArmor = new THREE.Group()
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0xa8b6c6, metalness: 0.45, roughness: 0.34, fog: false })
+  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.055, 0.66), armorMat)
+  backPlate.position.set(0, 0.61, -0.03)
+  backPlate.rotation.x = -0.08
+  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.24), armorMat)
+  chestPlate.position.set(0, 0.49, 0.34)
+  chestPlate.rotation.x = 0.18
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.23), armorMat)
+  helm.position.set(0, 0.73, 0.43)
+  siggeArmor.add(backPlate, chestPlate, helm)
+  siggeArmor.visible = false
+  siggeVisual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail, siggeArmor)
   siggeVisual.scale.setScalar(SIGGE_SCALE)
   siggeG.add(siggeVisual)
   siggeG.position.set(0, PLAYER_H, 0)
@@ -774,12 +904,126 @@ function buildScene() {
   foxG.visible = false
   scene.add(foxG)
 
+  // Cat
+  const catG = new THREE.Group()
+  const catMat = new THREE.MeshStandardMaterial({ color: 0x80878d, roughness: 0.62 })
+  const catDarkMat = new THREE.MeshStandardMaterial({ color: 0x353a3d, roughness: 0.66 })
+  const catLightMat = new THREE.MeshStandardMaterial({ color: 0xc7c9c8, roughness: 0.7 })
+  const cBody = new THREE.Mesh(new THREE.SphereGeometry(0.31, 18, 12), catMat)
+  cBody.scale.set(0.78, 0.5, 1.34)
+  cBody.position.y = 0.31
+  const cChest = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), catLightMat)
+  cChest.scale.set(0.8, 0.55, 0.45)
+  cChest.position.set(0, 0.32, 0.34)
+  const cHead = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), catMat)
+  cHead.scale.set(0.96, 0.78, 0.92)
+  cHead.position.set(0, 0.52, 0.55)
+  const cSnout = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), catLightMat)
+  cSnout.scale.set(1.12, 0.58, 0.84)
+  cSnout.position.set(0, 0.48, 0.72)
+  const catNose = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), black)
+  catNose.scale.set(1.15, 0.75, 0.75)
+  catNose.position.set(0, 0.49, 0.82)
+  const catMouthLine = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.011, 0.055), black)
+  catMouthLine.position.set(0, 0.452, 0.76)
+  const catLowerJawG = new THREE.Group()
+  catLowerJawG.position.set(0, 0.45, 0.7)
+  const catLowerJaw = new THREE.Mesh(new THREE.SphereGeometry(0.054, 10, 8), catLightMat)
+  catLowerJaw.scale.set(1.08, 0.34, 0.88)
+  catLowerJaw.position.set(0, -0.02, 0.08)
+  catLowerJawG.add(catLowerJaw)
+  const leftCatEye = new THREE.Mesh(new THREE.SphereGeometry(0.023, 8, 6), new THREE.MeshBasicMaterial({ color: 0xa8ff80, fog: false }))
+  leftCatEye.position.set(-0.075, 0.56, 0.7)
+  const rightCatEye = leftCatEye.clone()
+  rightCatEye.position.x = 0.075
+  const leftCatEar = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.22, 4), catMat)
+  leftCatEar.rotation.set(0.1, 0.22, -0.1)
+  leftCatEar.position.set(-0.13, 0.69, 0.47)
+  const rightCatEar = leftCatEar.clone()
+  rightCatEar.rotation.set(0.1, -0.22, 0.1)
+  rightCatEar.position.x = 0.13
+  const catTail = new THREE.Group()
+  catTail.position.set(0, 0.38, -0.44)
+  catTail.rotation.x = -0.2
+  for (const [z, y, sx, sy, sz] of [
+    [-0.1, 0.02, 0.075, 0.07, 0.18],
+    [-0.28, 0.08, 0.07, 0.065, 0.2],
+    [-0.45, 0.17, 0.064, 0.06, 0.18],
+    [-0.56, 0.29, 0.058, 0.055, 0.14],
+  ] as [number, number, number, number, number][]) {
+    const segment = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), catMat)
+    segment.scale.set(sx, sy, sz)
+    segment.position.set(0, y, z)
+    catTail.add(segment)
+  }
+  const catLegs: THREE.Mesh[] = []
+  for (const x of [-0.15, 0.15]) {
+    for (const z of [-0.23, 0.26]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.25, 8), catDarkMat)
+      leg.position.set(x, 0.13, z)
+      catLegs.push(leg)
+    }
+  }
+  catG.userData.parts = {
+    body: cBody,
+    chest: cChest,
+    head: cHead,
+    snout: cSnout,
+    nose: catNose,
+    mouthLine: catMouthLine,
+    lowerJaw: catLowerJawG,
+    tail: catTail,
+    legs: catLegs,
+    baseY: 0,
+    bodyY: cBody.position.y,
+    chestY: cChest.position.y,
+    headY: cHead.position.y,
+    headZ: cHead.position.z,
+    snoutY: cSnout.position.y,
+    snoutZ: cSnout.position.z,
+    noseY: catNose.position.y,
+    noseZ: catNose.position.z,
+    mouthLineY: catMouthLine.position.y,
+    mouthLineZ: catMouthLine.position.z,
+    lowerJawY: catLowerJawG.position.y,
+    lowerJawZ: catLowerJawG.position.z,
+    lowerJawRotX: catLowerJawG.rotation.x,
+    tailRotX: catTail.rotation.x,
+    tailRotZ: catTail.rotation.z,
+  }
+  catG.add(
+    cBody,
+    cChest,
+    cHead,
+    cSnout,
+    catNose,
+    catMouthLine,
+    catLowerJawG,
+    leftCatEye,
+    rightCatEye,
+    leftCatEar,
+    rightCatEar,
+    catTail,
+    ...catLegs,
+  )
+  catG.visible = false
+  scene.add(catG)
+
   return {
     scene,
     siggeG,
     siggeVisual,
+    siggeArmor,
     foxG,
+    catG,
     carrots,
+    hemi,
+    sun,
+    moonLight,
+    sunOrb,
+    moonOrb,
+    windowLights,
+    glassMat,
     houseAabb,
     hutchAabb,
     hutchCenter,
@@ -792,10 +1036,15 @@ function main() {
   const root = document.getElementById('app')!
   // HUD: läs in efter att DOM:en finns; index.html ersätts i bygget med rätt "Kod:" redan
   const elEnergy = document.getElementById('energy-bar') as HTMLDivElement | null
+  const elNightCount = document.getElementById('night-count') as HTMLSpanElement | null
+  const elCycle = document.getElementById('cycle-state') as HTMLSpanElement | null
+  const elItems = document.getElementById('item-status') as HTMLSpanElement | null
+  const elPickup = document.getElementById('hud-pickup') as HTMLParagraphElement | null
   const elFox = document.getElementById('hud-fox') as HTMLParagraphElement | null
   const elSafe = document.getElementById('hud-safe') as HTMLParagraphElement | null
   const elGameOver = document.getElementById('hud-gameover') as HTMLParagraphElement | null
   const elGameOverDialog = document.getElementById('gameover-dialog') as HTMLDivElement | null
+  const elGameOverDetail = document.getElementById('gameover-detail') as HTMLParagraphElement | null
   const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
   const elMoveZone = document.getElementById('move-zone') as HTMLDivElement | null
   const elMoveStick = document.getElementById('move-stick') as HTMLDivElement | null
@@ -809,7 +1058,27 @@ function main() {
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
   }
-  const { scene, siggeG, siggeVisual, foxG, carrots, houseAabb, hutchAabb, hutchCenter, rampSpec, hutchSpec } = buildScene()
+  const {
+    scene,
+    siggeG,
+    siggeVisual,
+    siggeArmor,
+    foxG,
+    catG,
+    carrots,
+    hemi,
+    sun,
+    moonLight,
+    sunOrb,
+    moonOrb,
+    windowLights,
+    glassMat,
+    houseAabb,
+    hutchAabb,
+    hutchCenter,
+    rampSpec,
+    hutchSpec,
+  } = buildScene()
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200)
   const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -839,6 +1108,7 @@ function main() {
   let touchJumpQueued = false
   const pVel = new THREE.Vector3(0, 0, 0)
   const foxP = new THREE.Vector3(0, 0, 12)
+  const catP = new THREE.Vector3(0, 0, -12)
   /** Var Sigge tittar (Y-rotation) — kameran följer bakifrån. */
   let playerFacing = 0
   let cameraYaw = 0
@@ -854,9 +1124,33 @@ function main() {
   let foxWalkPhase = 0
   let foxBiteCooldown = 0
   let foxBiteAnimLeft = 0
+  let catMode: FoxMode = 'hidden'
+  let catNext = 12
+  let catSniffLeft = 0
+  let catWalkPhase = 0
+  let catBiteCooldown = 0
+  let catBiteAnimLeft = 0
+  let cycleClock = TWILIGHT_SECONDS * 0.45
+  let survivedNights = 0
+  let wasNight = false
+  let armorCharges = 0
+  let shieldPotionLeft = 0
+  let speedPotionLeft = 0
+  let pickupSpawnNext = 7
+  let pickupMessageLeft = 0
   let mobileStarted = !isMobileLike()
+  let titleStarted = false
   const foxTarget = new THREE.Vector3()
   const foxLeaveTarget = new THREE.Vector3()
+  const catTarget = new THREE.Vector3()
+  const catLeaveTarget = new THREE.Vector3()
+  const pickups: Pickup[] = []
+  const skyDay = new THREE.Color(0x6eb8d4)
+  const skyTwilight = new THREE.Color(0xf5a06c)
+  const skyNight = new THREE.Color(0x070b1c)
+  const fogDay = new THREE.Color(0x8ec8e0)
+  const fogTwilight = new THREE.Color(0xf0a178)
+  const fogNight = new THREE.Color(0x090d1a)
 
   function isMobileLike(): boolean {
     return navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches
@@ -867,13 +1161,14 @@ function main() {
   }
 
   function mobileBlocked(): boolean {
-    return isMobileLike() && (!mobileStarted || isPortrait())
+    return !titleStarted || (isMobileLike() && (!mobileStarted || isPortrait()))
   }
 
   function updateMobileOverlays() {
     const mobile = isMobileLike()
     const portrait = isPortrait()
-    elStartScreen?.classList.toggle('mobile-overlay--hidden', !mobile || mobileStarted || portrait)
+    const showStart = (!mobile || !portrait) && (!titleStarted || (mobile && !mobileStarted))
+    elStartScreen?.classList.toggle('mobile-overlay--hidden', !showStart)
     elRotateScreen?.classList.toggle('mobile-overlay--hidden', !mobile || !portrait)
     if (!mobile) {
       mobileStarted = true
@@ -994,6 +1289,240 @@ function main() {
     return { x, z }
   }
 
+  function isNightNow(): boolean {
+    return cycleClock >= DAY_SECONDS
+  }
+
+  function updateDayNight(dt: number) {
+    const prevNight = wasNight
+    if (!gameOver) {
+      cycleClock = (cycleClock + dt) % CYCLE_SECONDS
+    }
+    const night = isNightNow()
+    if (prevNight && !night && !gameOver) {
+      survivedNights += 1
+    }
+    wasNight = night
+
+    let sky = skyDay.clone()
+    let fog = fogDay.clone()
+    let sunIntensity = 1
+    let moonIntensity = 0
+    let hemiIntensity = 0.85
+    let windowPower = 0
+    let label = 'Dag'
+
+    if (!night) {
+      const dayT = THREE.MathUtils.clamp(cycleClock / DAY_SECONDS, 0, 1)
+      const sunHeight = Math.sin(dayT * Math.PI)
+      const dawn = 1 - THREE.MathUtils.clamp(cycleClock / TWILIGHT_SECONDS, 0, 1)
+      const dusk = THREE.MathUtils.clamp((cycleClock - (DAY_SECONDS - TWILIGHT_SECONDS)) / TWILIGHT_SECONDS, 0, 1)
+      const twilight = Math.max(dawn, dusk)
+      sky = skyDay.clone().lerp(skyTwilight, twilight * 0.92)
+      fog = fogDay.clone().lerp(fogTwilight, twilight * 0.85)
+      sunIntensity = THREE.MathUtils.lerp(0.34, 1.08, sunHeight) * (1 - dusk * 0.35)
+      hemiIntensity = THREE.MathUtils.lerp(0.48, 0.9, sunHeight) * (1 - dusk * 0.18)
+      windowPower = Math.max(dusk * 0.4, dawn * 0.18)
+      label = dawn > 0.05 ? 'Gryning' : dusk > 0.05 ? 'Skymning' : 'Dag'
+
+      const sunX = Math.cos(Math.PI * (1 - dayT)) * 29
+      const sunY = 2.6 + sunHeight * 29
+      sun.position.set(sunX, sunY, 13)
+      sunOrb.position.copy(sun.position)
+      sunOrb.visible = true
+      moonOrb.visible = false
+    } else {
+      const nightT = THREE.MathUtils.clamp((cycleClock - DAY_SECONDS) / NIGHT_SECONDS, 0, 1)
+      const nightRise = THREE.MathUtils.clamp((cycleClock - DAY_SECONDS) / 4, 0, 1)
+      sky = skyTwilight.clone().lerp(skyNight, nightRise)
+      fog = fogTwilight.clone().lerp(fogNight, nightRise)
+      sunIntensity = 0
+      moonIntensity = 0.24 + Math.sin(nightT * Math.PI) * 0.16
+      hemiIntensity = 0.08
+      windowPower = 0.9 + Math.sin(nightT * Math.PI) * 0.28
+      label = 'Natt'
+
+      const moonX = Math.cos(Math.PI * (1 - nightT)) * 25
+      const moonY = 7 + Math.sin(nightT * Math.PI) * 24
+      moonLight.position.set(moonX, moonY, -14)
+      moonOrb.position.copy(moonLight.position)
+      moonOrb.visible = true
+      sunOrb.visible = false
+    }
+
+    ;(scene.background as THREE.Color).copy(sky)
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(fog)
+      scene.fog.near = night ? 10 : 22
+      scene.fog.far = night ? 36 : 55
+    }
+    hemi.intensity = hemiIntensity
+    sun.intensity = sunIntensity
+    sun.color.set(label === 'Skymning' || label === 'Gryning' ? 0xffc58a : 0xfffaec)
+    moonLight.intensity = moonIntensity
+    glassMat.emissiveIntensity = windowPower * 1.15
+    for (const [i, light] of windowLights.entries()) {
+      light.intensity = windowPower * (0.58 + (i % 3) * 0.08)
+    }
+    if (elCycle) {
+      const left = night ? CYCLE_SECONDS - cycleClock : DAY_SECONDS - cycleClock
+      elCycle.textContent = `${label} ${Math.max(0, Math.ceil(left))} s`
+    }
+    if (elNightCount) {
+      elNightCount.textContent = `${survivedNights}`
+    }
+  }
+
+  function randomGardenPosition(): THREE.Vector3 {
+    for (let i = 0; i < 40; i++) {
+      const x = THREE.MathUtils.randFloat(-INNER + 1.2, INNER - 1.2)
+      const z = THREE.MathUtils.randFloat(-INNER + 1.2, INNER - 1.2)
+      const nearHouse = aabb2ContainsXZ(houseAabb, x, z)
+      const nearHutch = aabb2ContainsXZ({
+        min: hutchAabb.min.clone().addScalar(-1.3),
+        max: hutchAabb.max.clone().addScalar(1.3),
+        y0: hutchAabb.y0,
+        y1: hutchAabb.y1,
+      }, x, z)
+      if (!nearHouse && !nearHutch && Math.hypot(x - siggeG.position.x, z - siggeG.position.z) > 3) {
+        return new THREE.Vector3(x, 0.24, z)
+      }
+    }
+    return new THREE.Vector3(0, 0.24, -10)
+  }
+
+  function pickupLabel(kind: PickupKind): string {
+    if (kind === 'light-armor') {
+      return 'Lätt rustning'
+    }
+    if (kind === 'heavy-armor') {
+      return 'Stark rustning'
+    }
+    if (kind === 'energy-potion') {
+      return 'Energipotion'
+    }
+    if (kind === 'speed-potion') {
+      return 'Fartpotion'
+    }
+    return 'Skyddspotion'
+  }
+
+  function createPickupGroup(kind: PickupKind) {
+    const g = new THREE.Group()
+    g.userData.baseY = 0.24
+    const glow = new THREE.PointLight(0xffffff, 0.28, 3.6, 2)
+    glow.position.y = 0.45
+
+    if (kind === 'light-armor' || kind === 'heavy-armor') {
+      const heavy = kind === 'heavy-armor'
+      const armorMat = new THREE.MeshStandardMaterial({
+        color: heavy ? 0x657286 : 0xa8b6c6,
+        emissive: heavy ? 0x10172a : 0x0c151d,
+        emissiveIntensity: 0.18,
+        metalness: 0.55,
+        roughness: 0.3,
+      })
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.18, heavy ? 0.27 : 0.23, 0.34, 6), armorMat)
+      plate.rotation.z = Math.PI / 2
+      plate.position.y = 0.34
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.06), armorMat)
+      band.position.y = 0.34
+      glow.color.set(heavy ? 0x9cb7ff : 0xd8ecff)
+      g.add(plate, band, glow)
+    } else {
+      const potionColor = kind === 'energy-potion' ? 0xff5964 : kind === 'speed-potion' ? 0x4fc3ff : 0xb487ff
+      const potionMat = new THREE.MeshStandardMaterial({
+        color: potionColor,
+        emissive: potionColor,
+        emissiveIntensity: 0.55,
+        roughness: 0.25,
+        metalness: 0.02,
+      })
+      const glassBottle = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.34, 12), potionMat)
+      glassBottle.position.y = 0.3
+      const stopper = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 8), new THREE.MeshStandardMaterial({ color: 0x5c3b1f, roughness: 0.7 }))
+      stopper.position.y = 0.52
+      const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), potionMat)
+      bubble.position.y = 0.16
+      glow.color.set(potionColor)
+      g.add(glassBottle, stopper, bubble, glow)
+    }
+
+    return g
+  }
+
+  function spawnPickup() {
+    if (pickups.length >= PICKUP_MAX) {
+      return
+    }
+    const kinds: PickupKind[] = ['light-armor', 'heavy-armor', 'energy-potion', 'speed-potion', 'shield-potion']
+    const weights = isNightNow() ? [3, 2, 2, 2, 3] : [2, 1, 3, 2, 1]
+    const total = weights.reduce((sum, value) => sum + value, 0)
+    let roll = Math.random() * total
+    let kind = kinds[0]
+    for (let i = 0; i < kinds.length; i++) {
+      roll -= weights[i]
+      if (roll <= 0) {
+        kind = kinds[i]
+        break
+      }
+    }
+    const group = createPickupGroup(kind)
+    group.position.copy(randomGardenPosition())
+    scene.add(group)
+    pickups.push({ group, kind, ttl: 42 })
+  }
+
+  function applyPickup(kind: PickupKind) {
+    if (kind === 'light-armor') {
+      armorCharges = Math.min(ARMOR_MAX, armorCharges + 1)
+    } else if (kind === 'heavy-armor') {
+      armorCharges = Math.min(ARMOR_MAX, armorCharges + 2)
+    } else if (kind === 'energy-potion') {
+      energy = Math.min(ENERGY_MAX, energy + 32)
+    } else if (kind === 'speed-potion') {
+      speedPotionLeft = Math.max(speedPotionLeft, SPEED_POTION_SECONDS)
+    } else {
+      shieldPotionLeft = Math.max(shieldPotionLeft, SHIELD_POTION_SECONDS)
+    }
+    if (elPickup) {
+      elPickup.textContent = `${pickupLabel(kind)} plockad`
+      elPickup.classList.remove('hud-pickup--hidden')
+      pickupMessageLeft = 2.4
+    }
+  }
+
+  function updatePickups(dt: number, now: number) {
+    if (gameOver) {
+      return
+    }
+    pickupSpawnNext -= dt
+    if (pickupSpawnNext <= 0) {
+      spawnPickup()
+      pickupSpawnNext = THREE.MathUtils.randFloat(PICKUP_SPAWN_MIN, PICKUP_SPAWN_MAX)
+    }
+    for (let i = pickups.length - 1; i >= 0; i--) {
+      const pickup = pickups[i]
+      pickup.ttl -= dt
+      pickup.group.rotation.y += dt * 1.9
+      pickup.group.position.y = pickup.group.userData.baseY + Math.sin(now * 2.8 + i) * 0.08
+      if (pickup.group.position.distanceTo(siggeG.position) < PICKUP_PICK) {
+        applyPickup(pickup.kind)
+        scene.remove(pickup.group)
+        pickups.splice(i, 1)
+      } else if (pickup.ttl <= 0) {
+        scene.remove(pickup.group)
+        pickups.splice(i, 1)
+      }
+    }
+    if (pickupMessageLeft > 0) {
+      pickupMessageLeft = Math.max(0, pickupMessageLeft - dt)
+      if (pickupMessageLeft <= 0) {
+        elPickup?.classList.add('hud-pickup--hidden')
+      }
+    }
+  }
+
   function trySpawnFox() {
     if (foxMode !== 'hidden') {
       return
@@ -1093,16 +1622,125 @@ function main() {
     foxMode = 'sniff'
   }
 
-  function resolveCarrots() {
+  function trySpawnCat() {
+    if (catMode !== 'hidden') {
+      return
+    }
+    const ang = Math.random() * Math.PI * 2
+    const r = INNER - 1.0
+    catP.set(Math.cos(ang) * r, 0.22, Math.sin(ang) * r)
+    catG.position.copy(catP)
+    catG.visible = true
+    catMode = 'chase'
+  }
+
+  function hideCat() {
+    catMode = 'hidden'
+    catG.visible = false
+    catNext = THREE.MathUtils.randFloat(CAT_TIMER_MIN, CAT_TIMER_MAX)
+  }
+
+  function moveCatToward(target: THREE.Vector3, speed: number, dt: number): number {
+    const to = target.clone().sub(catG.position)
+    to.y = 0
+    const dist = to.length()
+    if (dist < 0.01) {
+      return dist
+    }
+    const stepLen = Math.min(dist, speed * dt)
+    to.normalize()
+    catG.position.addScaledVector(to, stepLen)
+    catG.rotation.y = Math.atan2(to.x, to.z)
+    return dist - stepLen
+  }
+
+  function animateCat(moving: boolean, sniffing: boolean, dt: number, now: number) {
+    const parts = catG.userData.parts
+    if (!parts) {
+      return
+    }
+    if (moving) {
+      catWalkPhase += dt * 13
+    } else {
+      catWalkPhase = THREE.MathUtils.lerp(catWalkPhase, 0, Math.min(1, dt * 7))
+    }
+
+    const stride = Math.sin(catWalkPhase)
+    const counterStride = Math.sin(catWalkPhase + Math.PI)
+    const bob = moving ? Math.abs(stride) * 0.026 : sniffing ? Math.sin(now * 9) * 0.01 : 0
+    const headNod = sniffing ? Math.sin(now * 14) * 0.028 : moving ? Math.sin(catWalkPhase + 0.4) * 0.012 : 0
+
+    catG.position.y = 0.22 + bob
+    parts.body.position.y = parts.bodyY + bob * 0.35
+    parts.chest.position.y = parts.chestY + bob * 0.4
+    const biteOpen = catBiteAnimLeft > 0
+      ? Math.sin((1 - catBiteAnimLeft / CAT_BITE_ANIM_TIME) * Math.PI)
+      : 0
+    const biteReach = biteOpen * 0.12
+    const biteDrop = biteOpen * 0.025
+    parts.head.position.y = parts.headY + headNod - biteDrop
+    parts.head.position.z = parts.headZ + biteReach * 0.28
+    parts.snout.position.y = parts.snoutY + headNod - biteDrop
+    parts.snout.position.z = parts.snoutZ + biteReach
+    parts.nose.position.y = parts.noseY + headNod - biteDrop
+    parts.nose.position.z = parts.noseZ + biteReach
+    parts.mouthLine.position.y = parts.mouthLineY + headNod - biteDrop
+    parts.mouthLine.position.z = parts.mouthLineZ + biteReach
+    parts.lowerJaw.position.y = parts.lowerJawY + headNod - biteDrop
+    parts.lowerJaw.position.z = parts.lowerJawZ + biteReach
+    parts.lowerJaw.rotation.x = parts.lowerJawRotX + biteOpen * 0.44
+    const tailWave = Math.sin(catWalkPhase + 1.1)
+    parts.tail.rotation.x = parts.tailRotX + (moving ? 0.08 : 0.03) * tailWave
+    parts.tail.rotation.z = parts.tailRotZ + (moving ? 0.2 : 0.08) * tailWave
+
+    for (let i = 0; i < parts.legs.length; i++) {
+      const leg = parts.legs[i] as THREE.Mesh
+      const phase = i % 2 === 0 ? stride : counterStride
+      leg.rotation.x = moving ? phase * 0.55 : THREE.MathUtils.lerp(leg.rotation.x, 0, Math.min(1, dt * 8))
+    }
+  }
+
+  function startCatSniff() {
+    const side = catG.position.clone().sub(hutchCenter)
+    side.y = 0
+    if (side.lengthSq() < 0.01) {
+      side.set(0, 0, -1)
+    }
+    side.normalize()
+    catTarget.set(
+      hutchCenter.x + side.x * CAT_SNIFF_DIST,
+      0.22,
+      hutchCenter.z + side.z * CAT_SNIFF_DIST,
+    )
+    catLeaveTarget.set(
+      hutchCenter.x + side.x * (INNER + 8),
+      0.22,
+      hutchCenter.z + side.z * (INNER + 8),
+    )
+    catSniffLeft = CAT_SNIFF_TIME
+    catMode = 'sniff'
+  }
+
+  function updateCarrots(dt: number) {
     if (gameOver) {
       return
     }
     for (const c of carrots) {
-      if (!c.userData.picked) {
-        const d = c.position.distanceTo(siggeG.position)
+      if (c.picked) {
+        c.regrowLeft = Math.max(0, c.regrowLeft - dt)
+        const growth = c.regrowTotal > 0 ? 1 - c.regrowLeft / c.regrowTotal : 1
+        setCarrotPlantGrowth(c, growth)
+        if (c.regrowLeft <= 0) {
+          c.picked = false
+          setCarrotPlantGrowth(c, 1)
+        }
+      } else {
+        const d = c.root.position.distanceTo(siggeG.position)
         if (d < CARROT_PICK) {
-          c.userData.picked = true
-          c.visible = false
+          c.picked = true
+          c.regrowTotal = THREE.MathUtils.randFloat(CARROT_REGROW_MIN, CARROT_REGROW_MAX)
+          c.regrowLeft = c.regrowTotal
+          setCarrotPlantGrowth(c, 0.06)
           energy = Math.min(ENERGY_MAX, energy + ENERGY_PER_CARROT)
         }
       }
@@ -1117,12 +1755,42 @@ function main() {
     if (energy <= 0) {
       gameOver = true
       energy = 0
+      if (elGameOverDetail) {
+        elGameOverDetail.textContent = `Sigge överlevde ${survivedNights} ${survivedNights === 1 ? 'natt' : 'nätter'}.`
+      }
       elGameOverDialog?.classList.remove('gameover-dialog--hidden')
       pVel.set(0, 0, 0)
       resetTouchControls()
       for (const code of Object.keys(keys)) {
         keys[code] = false
       }
+    }
+  }
+
+  function receiveBite(baseDamage: number) {
+    if (shieldPotionLeft > 0) {
+      reduceEnergy(baseDamage * 0.22)
+      return
+    }
+    if (armorCharges > 0) {
+      armorCharges -= 1
+      reduceEnergy(baseDamage * 0.28)
+      return
+    }
+    reduceEnergy(baseDamage)
+  }
+
+  function updateItemHud(dt: number) {
+    if (!gameOver) {
+      shieldPotionLeft = Math.max(0, shieldPotionLeft - dt)
+      speedPotionLeft = Math.max(0, speedPotionLeft - dt)
+    }
+    siggeArmor.visible = armorCharges > 0 || shieldPotionLeft > 0
+    siggeArmor.rotation.y = shieldPotionLeft > 0 ? Math.sin(performance.now() * 0.006) * 0.12 : 0
+    if (elItems) {
+      const shieldText = shieldPotionLeft > 0 ? ` · Skydd ${Math.ceil(shieldPotionLeft)} s` : ''
+      const speedText = speedPotionLeft > 0 ? ` · Fart ${Math.ceil(speedPotionLeft)} s` : ''
+      elItems.textContent = `Rustning ${armorCharges}/${ARMOR_MAX}${shieldText}${speedText}`
     }
   }
 
@@ -1301,23 +1969,54 @@ function main() {
   window.addEventListener('blur', resetTouchControls)
 
   elStartFullscreen?.addEventListener('click', async () => {
-    try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen()
+    if (isMobileLike()) {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen()
+        }
+      } catch {
+        // Fullscreen is best-effort; browsers may reject it.
       }
-    } catch {
-      // Fullscreen is best-effort; browsers may reject it.
+      try {
+        await (screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> }).lock?.('landscape')
+      } catch {
+        // Orientation lock is also best-effort, especially on iOS.
+      }
     }
-    try {
-      await (screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> }).lock?.('landscape')
-    } catch {
-      // Orientation lock is also best-effort, especially on iOS.
-    }
+    titleStarted = true
     mobileStarted = true
+    last = performance.now() / 1000
     updateMobileOverlays()
   })
 
   let last = performance.now() / 1000
+
+  const debugEnabled = (
+    (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') &&
+    new URLSearchParams(window.location.search).has('debug')
+  )
+  if (debugEnabled) {
+    window.__siggeDebug = {
+      setCycleClock: (seconds: number) => {
+        cycleClock = THREE.MathUtils.euclideanModulo(seconds, CYCLE_SECONDS)
+        wasNight = isNightNow()
+        updateDayNight(0)
+      },
+      setEnergy: (value: number) => {
+        energy = THREE.MathUtils.clamp(value, 0, ENERGY_MAX)
+      },
+      spawnPickup: (kind?: PickupKind) => {
+        if (kind) {
+          const group = createPickupGroup(kind)
+          group.position.copy(randomGardenPosition())
+          scene.add(group)
+          pickups.push({ group, kind, ttl: 42 })
+        } else {
+          spawnPickup()
+        }
+      },
+    }
+  }
 
   function restartGame() {
     energy = START_ENERGY
@@ -1333,15 +2032,40 @@ function main() {
     foxWalkPhase = 0
     foxBiteCooldown = 0
     foxBiteAnimLeft = 0
+    catMode = 'hidden'
+    catNext = 12
+    catSniffLeft = 0
+    catWalkPhase = 0
+    catBiteCooldown = 0
+    catBiteAnimLeft = 0
+    cycleClock = TWILIGHT_SECONDS * 0.45
+    survivedNights = 0
+    wasNight = false
+    armorCharges = 0
+    shieldPotionLeft = 0
+    speedPotionLeft = 0
+    pickupSpawnNext = 7
+    pickupMessageLeft = 0
     pVel.set(0, 0, 0)
     siggeG.position.set(0, PLAYER_H, 0)
     siggeG.rotation.set(0, 0, 0)
     siggeVisual.position.set(0, 0, 0)
+    siggeArmor.visible = false
     foxG.visible = false
     foxG.position.set(0, 0, 12)
+    catG.visible = false
+    catG.position.set(0, 0, -12)
     for (const c of carrots) {
-      c.userData.picked = false
-      c.visible = true
+      c.picked = false
+      c.regrowLeft = 0
+      c.regrowTotal = 0
+      setCarrotPlantGrowth(c, 1)
+    }
+    while (pickups.length > 0) {
+      const pickup = pickups.pop()
+      if (pickup) {
+        scene.remove(pickup.group)
+      }
     }
     resetTouchControls()
     for (const code of Object.keys(keys)) {
@@ -1351,9 +2075,12 @@ function main() {
     elGameOver?.classList.add('hud-gameover--hidden')
     elFox?.classList.add('hud-fox--hidden')
     elSafe?.classList.add('hud-safe--hidden')
+    elPickup?.classList.add('hud-pickup--hidden')
     if (elEnergy) {
       elEnergy.style.width = `${(energy / ENERGY_MAX) * 100}%`
     }
+    updateDayNight(0)
+    updateItemHud(0)
     last = performance.now() / 1000
   }
 
@@ -1370,19 +2097,33 @@ function main() {
       renderer.render(scene, camera)
       return
     }
+    updateDayNight(dt)
+    updateItemHud(dt)
     if (foxBiteCooldown > 0) {
       foxBiteCooldown = Math.max(0, foxBiteCooldown - dt)
     }
     if (foxBiteAnimLeft > 0) {
       foxBiteAnimLeft = Math.max(0, foxBiteAnimLeft - dt)
     }
+    if (catBiteCooldown > 0) {
+      catBiteCooldown = Math.max(0, catBiteCooldown - dt)
+    }
+    if (catBiteAnimLeft > 0) {
+      catBiteAnimLeft = Math.max(0, catBiteAnimLeft - dt)
+    }
     if (!gameOver) {
       reduceEnergy(ENERGY_DRAIN_PER_SEC * dt)
     }
     if (!gameOver && foxMode === 'hidden') {
-      foxNext -= dt
+      foxNext -= dt * (isNightNow() ? 1.25 : 0.75)
       if (foxNext <= 0) {
         trySpawnFox()
+      }
+    }
+    if (!gameOver && catMode === 'hidden') {
+      catNext -= dt * (isNightNow() ? 1.55 : 0.55)
+      if (catNext <= 0) {
+        trySpawnCat()
       }
     }
 
@@ -1424,7 +2165,7 @@ function main() {
       }
     }
 
-    const boost = 1 + energy * 0.0008
+    const boost = (1 + energy * 0.0008) * (speedPotionLeft > 0 ? 1.22 : 1)
     const speed = gameOver ? 0 : moveAmount * MOVE * dt * boost
     pVel.x = moveX * speed
     pVel.z = moveZ * speed
@@ -1487,12 +2228,16 @@ function main() {
       siggeVisual.position.y = 0
     }
 
-    resolveCarrots()
+    updateCarrots(dt)
+    updatePickups(dt, now)
 
     const safe = inSafeZone(nx, ny, nz)
     elSafe?.classList.toggle('hud-safe--hidden', !safe)
     elGameOver?.classList.toggle('hud-gameover--hidden', !gameOver)
-    if (safe || foxMode === 'hidden' || foxMode === 'leave') {
+    if (
+      safe ||
+      ((foxMode === 'hidden' || foxMode === 'leave') && (catMode === 'hidden' || catMode === 'leave'))
+    ) {
       elFox?.classList.add('hud-fox--hidden')
     } else {
       elFox?.classList.remove('hud-fox--hidden')
@@ -1523,7 +2268,7 @@ function main() {
           foxBiteCooldown <= 0 &&
           new THREE.Vector2(foxG.position.x, foxG.position.z).distanceTo(new THREE.Vector2(nx, nz)) <= FOX_BITE
         ) {
-          reduceEnergy(FOX_BITE_DAMAGE)
+          receiveBite(FOX_BITE_DAMAGE)
           foxBiteCooldown = FOX_BITE_COOLDOWN
           foxBiteAnimLeft = FOX_BITE_ANIM_TIME
         }
@@ -1547,6 +2292,56 @@ function main() {
       }
     }
     animateFox(foxMoving, foxSniffing, dt, now)
+
+    let catMoving = false
+    let catSniffing = false
+    if (catMode === 'chase') {
+      if (safe) {
+        startCatSniff()
+      } else {
+        const siggeToCat = catG.position.clone().sub(siggeG.position)
+        siggeToCat.y = 0
+        if (siggeToCat.lengthSq() < 0.001) {
+          siggeToCat.set(Math.sin(catG.rotation.y), 0, Math.cos(catG.rotation.y))
+        }
+        siggeToCat.normalize()
+        catTarget.set(
+          siggeG.position.x + siggeToCat.x * CAT_ATTACK_DIST,
+          0.22,
+          siggeG.position.z + siggeToCat.z * CAT_ATTACK_DIST,
+        )
+        catMoving = moveCatToward(catTarget, CAT_SPD * (isNightNow() ? 1.08 : 0.92), dt) > 0.07
+        catG.position.x = THREE.MathUtils.clamp(catG.position.x, -INNER + 0.35, INNER - 0.35)
+        catG.position.z = THREE.MathUtils.clamp(catG.position.z, -INNER + 0.35, INNER - 0.35)
+        catG.rotation.y = Math.atan2(siggeG.position.x - catG.position.x, siggeG.position.z - catG.position.z)
+        if (
+          catBiteCooldown <= 0 &&
+          new THREE.Vector2(catG.position.x, catG.position.z).distanceTo(new THREE.Vector2(nx, nz)) <= CAT_BITE
+        ) {
+          receiveBite(CAT_BITE_DAMAGE)
+          catBiteCooldown = CAT_BITE_COOLDOWN
+          catBiteAnimLeft = CAT_BITE_ANIM_TIME
+        }
+      }
+    } else if (catMode === 'sniff') {
+      const remaining = moveCatToward(catTarget, CAT_SPD * 0.58, dt)
+      catMoving = remaining > 0.07
+      if (remaining < 0.07) {
+        catSniffing = true
+        catSniffLeft -= dt
+        catG.rotation.y += Math.sin(performance.now() * 0.016) * dt * 1.1
+        if (catSniffLeft <= 0) {
+          catMode = 'leave'
+        }
+      }
+    } else if (catMode === 'leave') {
+      const remaining = moveCatToward(catLeaveTarget, CAT_SPD * 0.85, dt)
+      catMoving = true
+      if (remaining < 0.2 || Math.abs(catG.position.x) > INNER || Math.abs(catG.position.z) > INNER) {
+        hideCat()
+      }
+    }
+    animateCat(catMoving, catSniffing, dt, now)
 
     // Kamera: följer bakom Sigge, men kan vridas fritt på mobil.
     const f = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))

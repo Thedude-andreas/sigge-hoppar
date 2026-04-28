@@ -58,6 +58,24 @@ canvas {
   font-size: 0.8rem;
 }
 
+#survival-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+  margin: 0.35rem 0 0.45rem;
+  max-width: min(92vw, 560px);
+  font-size: 0.78rem;
+}
+
+#survival-wrap span {
+  min-height: 1.35rem;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid rgba(221, 244, 207, 0.22);
+  border-radius: 6px;
+  background: rgba(8, 20, 10, 0.4);
+}
+
 #energy-wrap span {
   display: block;
   margin-bottom: 0.15rem;
@@ -81,6 +99,7 @@ canvas {
 
 #hud-fox,
 #hud-safe,
+#hud-pickup,
 #hud-gameover {
   margin: 0.4rem 0 0;
   font-size: 0.8rem;
@@ -95,6 +114,10 @@ canvas {
   color: #a5e0b5;
 }
 
+#hud-pickup {
+  color: #f8dc8a;
+}
+
 #hud-gameover {
   color: #ffd0c8;
   font-size: 1rem;
@@ -102,6 +125,7 @@ canvas {
 
 .hud-fox--hidden,
 .hud-safe--hidden,
+.hud-pickup--hidden,
 .hud-gameover--hidden {
   visibility: hidden;
   height: 0;
