@@ -80,7 +80,8 @@ canvas {
 }
 
 #hud-fox,
-#hud-safe {
+#hud-safe,
+#hud-gameover {
   margin: 0.4rem 0 0;
   font-size: 0.8rem;
   font-weight: 600;
@@ -94,8 +95,14 @@ canvas {
   color: #a5e0b5;
 }
 
+#hud-gameover {
+  color: #ffd0c8;
+  font-size: 1rem;
+}
+
 .hud-fox--hidden,
-.hud-safe--hidden {
+.hud-safe--hidden,
+.hud-gameover--hidden {
   visibility: hidden;
   height: 0;
   margin: 0;

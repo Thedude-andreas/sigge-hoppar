@@ -10,8 +10,8 @@ const PLAYER_H = 0
 const PLAYER_R = 0.29
 const GRAVITY = 18
 const JUMP_V = 7.2
-const MOVE = 5.2
-const FOX_SPD = 5.2
+const MOVE = 5.7
+const FOX_SPD = 4.9
 const FOX_TIMER_MIN = 8
 const FOX_TIMER_MAX = 18
 const FOX_SNIFF_TIME = 2.7
@@ -20,6 +20,11 @@ const CARROT_PICK = 0.85
 const FOX_BITE = 0.74
 const ENERGY_MAX = 100
 const ENERGY_PER_CARROT = 18
+const ENERGY_DRAIN_PER_SEC = 1.4
+const FOX_BITE_DAMAGE = 24
+const FOX_BITE_COOLDOWN = 1.15
+const FOX_BITE_ANIM_TIME = 0.42
+const FOX_ATTACK_DIST = 0.68
 
 /* --- AABB (Vector2: x, z) --- */
 type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
@@ -186,6 +191,124 @@ function buildScene() {
     hedge.position.set(px, h / 2, pz)
     scene.add(hedge)
   }
+
+  // Garden details: gravel paths, patio, trees and shrubs.
+  const gravelMat = new THREE.MeshStandardMaterial({ color: 0xa8997d, roughness: 0.98 })
+  const gravelEdgeMat = new THREE.MeshStandardMaterial({ color: 0x5c5244, roughness: 0.9 })
+  const pavingMat = new THREE.MeshStandardMaterial({ color: 0x8f8778, roughness: 0.92 })
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4428, roughness: 0.86 })
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f6b33, roughness: 0.85 })
+  const leafDarkMat = new THREE.MeshStandardMaterial({ color: 0x245128, roughness: 0.9 })
+  const flowerMat = new THREE.MeshStandardMaterial({ color: 0xd9d06a, roughness: 0.78 })
+
+  const addPath = (x1: number, z1: number, x2: number, z2: number, width: number) => {
+    const dx = x2 - x1
+    const dz = z2 - z1
+    const len = Math.hypot(dx, dz)
+    const g = new THREE.Group()
+    g.position.set((x1 + x2) / 2, 0.018, (z1 + z2) / 2)
+    g.rotation.y = Math.atan2(dx, dz)
+    const gravel = new THREE.Mesh(new THREE.BoxGeometry(width, 0.035, len), gravelMat)
+    const leftEdge = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.045, len), gravelEdgeMat)
+    const rightEdge = leftEdge.clone()
+    leftEdge.position.x = -width / 2 - 0.04
+    rightEdge.position.x = width / 2 + 0.04
+    g.add(gravel, leftEdge, rightEdge)
+    scene.add(g)
+  }
+
+  const addCurvedPath = (points: [number, number][], width: number) => {
+    for (let i = 0; i < points.length - 1; i++) {
+      const [x1, z1] = points[i]
+      const [x2, z2] = points[i + 1]
+      addPath(x1, z1, x2, z2, width)
+    }
+    for (const [x, z] of points.slice(1, -1)) {
+      const node = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.52, width * 0.52, 0.038, 18), gravelMat)
+      node.position.set(x, 0.02, z)
+      scene.add(node)
+    }
+  }
+
+  addCurvedPath([[-10.7, 12.9], [-6.6, 11.65], [-1.8, 9.45], [4.6, 7.55]], 0.74)
+  addCurvedPath([[4.6, 7.55], [5.9, 4.0], [7.25, 0.4], [8.1, -2.6]], 0.64)
+  addCurvedPath([[-3.6, 12.8], [-4.1, 14.1], [-3.75, 15.55], [-3.6, 16.9]], 0.7)
+
+  const patio = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.06, 3.2), pavingMat)
+  patio.position.set(-8.7, 0.03, 14.45)
+  scene.add(patio)
+  for (const x of [-10.7, -9.35, -8.0, -6.65]) {
+    const joint = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.07, 3.05), gravelEdgeMat)
+    joint.position.set(x, 0.075, 14.45)
+    scene.add(joint)
+  }
+  for (const z of [13.65, 14.45, 15.25]) {
+    const joint = new THREE.Mesh(new THREE.BoxGeometry(5.15, 0.07, 0.035), gravelEdgeMat)
+    joint.position.set(-8.7, 0.076, z)
+    scene.add(joint)
+  }
+
+  const addTree = (x: number, z: number, s: number) => {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * s, 0.22 * s, 1.55 * s, 10), trunkMat)
+    trunk.position.set(x, 0.78 * s, z)
+    const crown = new THREE.Group()
+    crown.position.set(x, 1.75 * s, z)
+    for (const [dx, dy, dz, r] of [
+      [0, 0, 0, 0.72],
+      [-0.35, -0.05, 0.08, 0.48],
+      [0.32, -0.02, -0.08, 0.5],
+      [0.05, 0.35, 0.04, 0.44],
+    ] as [number, number, number, number][]) {
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(r * s, 16, 12), dy > 0 ? leafMat : leafDarkMat)
+      leaf.position.set(dx * s, dy * s, dz * s)
+      crown.add(leaf)
+    }
+    scene.add(trunk, crown)
+  }
+
+  const addBush = (x: number, z: number, s: number, flowers = false) => {
+    const bush = new THREE.Group()
+    bush.position.set(x, 0.18 * s, z)
+    for (const [dx, dz, r] of [
+      [0, 0, 0.38],
+      [-0.28, 0.04, 0.28],
+      [0.24, -0.02, 0.3],
+      [0.02, 0.25, 0.25],
+    ] as [number, number, number][]) {
+      const part = new THREE.Mesh(new THREE.SphereGeometry(r * s, 14, 10), leafDarkMat)
+      part.scale.y = 0.72
+      part.position.set(dx * s, 0, dz * s)
+      bush.add(part)
+    }
+    if (flowers) {
+      for (const [dx, dz] of [[-0.12, 0.1], [0.18, -0.08], [0.05, 0.24]] as [number, number][]) {
+        const flower = new THREE.Mesh(new THREE.SphereGeometry(0.045 * s, 8, 6), flowerMat)
+        flower.position.set(dx * s, 0.23 * s, dz * s)
+        bush.add(flower)
+      }
+    }
+    scene.add(bush)
+  }
+
+  addTree(-18, -12, 1.0)
+  addTree(16, 13, 0.9)
+  addTree(-18, 17, 0.82)
+  addTree(18, -15, 0.95)
+  addTree(-13.5, -18.2, 0.85)
+  addTree(-4.2, -18.5, 0.76)
+  addTree(8.5, 17.8, 0.82)
+  addTree(19.2, 4.8, 0.78)
+  addTree(-20.5, 3.2, 0.72)
+  addBush(-14.5, 5, 1.45, true)
+  addBush(-6, -13.5, 1.25)
+  addBush(12.8, 3.5, 1.35, true)
+  addBush(2.2, 13.6, 1.15)
+  addBush(15.2, -1.8, 1.2)
+  addBush(-17.2, 10.8, 1.25, true)
+  addBush(-10.5, -17.4, 1.1)
+  addBush(5.5, 15.8, 1.2, true)
+  addBush(18.4, 9.8, 1.08)
+  addBush(11.5, -15.8, 1.25)
 
   // Svensk enplansvilla: låg röd träpanel, vita omfattningar och inbyggt garage på ena gaveln.
   const houseW = 13
@@ -540,6 +663,7 @@ function buildScene() {
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a0f05, roughness: 0.5 })
   const cream = new THREE.MeshStandardMaterial({ color: 0xf3e2bd, roughness: 0.7 })
   const black = new THREE.MeshBasicMaterial({ color: 0x120806, fog: false })
+  const toothMat = new THREE.MeshBasicMaterial({ color: 0xfff3d8, fog: false })
   const fBody = new THREE.Mesh(new THREE.SphereGeometry(0.34, 18, 12), orange)
   fBody.scale.set(0.85, 0.55, 1.45)
   fBody.position.y = 0.34
@@ -555,6 +679,19 @@ function buildScene() {
   const foxNose = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), black)
   foxNose.scale.set(1.15, 0.8, 0.8)
   foxNose.position.set(0, 0.52, 0.9)
+  const mouthLine = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.014, 0.08), black)
+  mouthLine.position.set(0, 0.492, 0.82)
+  const lowerJawG = new THREE.Group()
+  lowerJawG.position.set(0, 0.49, 0.77)
+  const lowerJaw = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), cream)
+  lowerJaw.scale.set(1.12, 0.36, 0.95)
+  lowerJaw.position.set(0, -0.03, 0.08)
+  lowerJawG.add(lowerJaw)
+  for (const x of [-0.05, 0.05]) {
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.013, 0.04, 5), toothMat)
+    tooth.position.set(x, -0.005, 0.12)
+    lowerJawG.add(tooth)
+  }
   const leftFoxEye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), black)
   leftFoxEye.position.set(-0.075, 0.61, 0.76)
   const rightFoxEye = leftFoxEye.clone()
@@ -585,6 +722,8 @@ function buildScene() {
     head: fHead,
     snout,
     nose: foxNose,
+    mouthLine,
+    lowerJaw: lowerJawG,
     tail,
     tailTip,
     legs,
@@ -592,8 +731,16 @@ function buildScene() {
     bodyY: fBody.position.y,
     chestY: fChest.position.y,
     headY: fHead.position.y,
+    headZ: fHead.position.z,
     snoutY: snout.position.y,
+    snoutZ: snout.position.z,
     noseY: foxNose.position.y,
+    noseZ: foxNose.position.z,
+    mouthLineY: mouthLine.position.y,
+    mouthLineZ: mouthLine.position.z,
+    lowerJawY: lowerJawG.position.y,
+    lowerJawZ: lowerJawG.position.z,
+    lowerJawRotX: lowerJawG.rotation.x,
     tailRotX: tail.rotation.x,
     tailTipY: tailTip.position.y,
   }
@@ -603,6 +750,8 @@ function buildScene() {
     fHead,
     snout,
     foxNose,
+    mouthLine,
+    lowerJawG,
     leftFoxEye,
     rightFoxEye,
     leftFoxEar,
@@ -634,6 +783,7 @@ function main() {
   const elEnergy = document.getElementById('energy-bar') as HTMLDivElement | null
   const elFox = document.getElementById('hud-fox') as HTMLParagraphElement | null
   const elSafe = document.getElementById('hud-safe') as HTMLParagraphElement | null
+  const elGameOver = document.getElementById('hud-gameover') as HTMLParagraphElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
@@ -654,12 +804,15 @@ function main() {
   let playerFacing = 0
   let hopPhase = 0
   const TURN_SPD = 2.2
-  let energy = 12
+  let energy = 45
   let onGround = true
+  let gameOver = false
   let foxMode: FoxMode = 'hidden'
   let foxNext = 5
   let foxSniffLeft = 0
   let foxWalkPhase = 0
+  let foxBiteCooldown = 0
+  let foxBiteAnimLeft = 0
   const foxTarget = new THREE.Vector3()
   const foxLeaveTarget = new THREE.Vector3()
 
@@ -825,9 +978,22 @@ function main() {
     foxG.position.y = 0.25 + bob
     parts.body.position.y = parts.bodyY + bob * 0.35
     parts.chest.position.y = parts.chestY + bob * 0.45
-    parts.head.position.y = parts.headY + headNod
-    parts.snout.position.y = parts.snoutY + headNod
-    parts.nose.position.y = parts.noseY + headNod
+    const biteOpen = foxBiteAnimLeft > 0
+      ? Math.sin((1 - foxBiteAnimLeft / FOX_BITE_ANIM_TIME) * Math.PI)
+      : 0
+    const biteReach = biteOpen * 0.16
+    const biteDrop = biteOpen * 0.035
+    parts.head.position.y = parts.headY + headNod - biteDrop
+    parts.head.position.z = parts.headZ + biteReach * 0.32
+    parts.snout.position.y = parts.snoutY + headNod - biteDrop
+    parts.snout.position.z = parts.snoutZ + biteReach
+    parts.nose.position.y = parts.noseY + headNod - biteDrop
+    parts.nose.position.z = parts.noseZ + biteReach
+    parts.mouthLine.position.y = parts.mouthLineY + headNod - biteDrop
+    parts.mouthLine.position.z = parts.mouthLineZ + biteReach
+    parts.lowerJaw.position.y = parts.lowerJawY + headNod - biteDrop
+    parts.lowerJaw.position.z = parts.lowerJawZ + biteReach
+    parts.lowerJaw.rotation.x = parts.lowerJawRotX + biteOpen * 0.52
     parts.tail.rotation.x = parts.tailRotX + Math.sin(foxWalkPhase + 0.8) * 0.14
     parts.tailTip.position.y = parts.tailTipY + Math.sin(foxWalkPhase + 0.8) * 0.035
 
@@ -860,6 +1026,9 @@ function main() {
   }
 
   function resolveCarrots() {
+    if (gameOver) {
+      return
+    }
     for (const c of carrots) {
       if (!c.userData.picked) {
         const d = c.position.distanceTo(siggeG.position)
@@ -868,6 +1037,24 @@ function main() {
           c.visible = false
           energy = Math.min(ENERGY_MAX, energy + ENERGY_PER_CARROT)
         }
+      }
+    }
+  }
+
+  function reduceEnergy(amount: number) {
+    if (gameOver || amount <= 0) {
+      return
+    }
+    energy = Math.max(0, energy - amount)
+    if (energy <= 0) {
+      gameOver = true
+      energy = 0
+      pVel.set(0, 0, 0)
+      for (const button of touchButtons) {
+        setTouchKey(button, false)
+      }
+      for (const code of Object.keys(keys)) {
+        keys[code] = false
       }
     }
   }
@@ -952,7 +1139,16 @@ function main() {
     if (dt > 0.1) {
       dt = 0.1
     }
-    if (foxMode === 'hidden') {
+    if (foxBiteCooldown > 0) {
+      foxBiteCooldown = Math.max(0, foxBiteCooldown - dt)
+    }
+    if (foxBiteAnimLeft > 0) {
+      foxBiteAnimLeft = Math.max(0, foxBiteAnimLeft - dt)
+    }
+    if (!gameOver) {
+      reduceEnergy(ENERGY_DRAIN_PER_SEC * dt)
+    }
+    if (!gameOver && foxMode === 'hidden') {
       foxNext -= dt
       if (foxNext <= 0) {
         trySpawnFox()
@@ -964,21 +1160,21 @@ function main() {
     const kLeft = keys['ArrowLeft'] || keys['KeyA']
     const kRight = keys['ArrowRight'] || keys['KeyD']
 
-    if (kLeft) {
+    if (!gameOver && kLeft) {
       playerFacing += TURN_SPD * dt
     }
-    if (kRight) {
+    if (!gameOver && kRight) {
       playerFacing -= TURN_SPD * dt
     }
 
     const forwardX = Math.sin(playerFacing)
     const forwardZ = Math.cos(playerFacing)
-    const thrust = (kUp ? 1 : 0) - (kDown ? 1 : 0)
+    const thrust = gameOver ? 0 : (kUp ? 1 : 0) - (kDown ? 1 : 0)
     const boost = 1 + energy * 0.0008
     pVel.x = forwardX * thrust * MOVE * dt * boost
     pVel.z = forwardZ * thrust * MOVE * dt * boost
     pVel.y -= GRAVITY * dt
-    if (onGround && keys['Space']) {
+    if (!gameOver && onGround && keys['Space']) {
       pVel.y = JUMP_V
       onGround = false
     }
@@ -1038,6 +1234,7 @@ function main() {
 
     const safe = inSafeZone(nx, ny, nz)
     elSafe?.classList.toggle('hud-safe--hidden', !safe)
+    elGameOver?.classList.toggle('hud-gameover--hidden', !gameOver)
     if (safe || foxMode === 'hidden' || foxMode === 'leave') {
       elFox?.classList.add('hud-fox--hidden')
     } else {
@@ -1050,13 +1247,28 @@ function main() {
       if (safe) {
         startFoxSniff()
       } else {
-        foxTarget.set(siggeG.position.x, 0.25, siggeG.position.z)
-        foxMoving = moveFoxToward(foxTarget, FOX_SPD * (0.9 + (100 - energy) * 0.0004), dt) > 0.08
+        const siggeToFox = foxG.position.clone().sub(siggeG.position)
+        siggeToFox.y = 0
+        if (siggeToFox.lengthSq() < 0.001) {
+          siggeToFox.set(Math.sin(foxG.rotation.y), 0, Math.cos(foxG.rotation.y))
+        }
+        siggeToFox.normalize()
+        foxTarget.set(
+          siggeG.position.x + siggeToFox.x * FOX_ATTACK_DIST,
+          0.25,
+          siggeG.position.z + siggeToFox.z * FOX_ATTACK_DIST,
+        )
+        foxMoving = moveFoxToward(foxTarget, FOX_SPD * (0.9 + (100 - energy) * 0.00035), dt) > 0.08
         foxG.position.x = THREE.MathUtils.clamp(foxG.position.x, -INNER + 0.4, INNER - 0.4)
         foxG.position.z = THREE.MathUtils.clamp(foxG.position.z, -INNER + 0.4, INNER - 0.4)
-        if (new THREE.Vector2(foxG.position.x, foxG.position.z).distanceTo(new THREE.Vector2(nx, nz)) < FOX_BITE) {
-          energy = Math.max(0, energy - 30)
-          hideFox()
+        foxG.rotation.y = Math.atan2(siggeG.position.x - foxG.position.x, siggeG.position.z - foxG.position.z)
+        if (
+          foxBiteCooldown <= 0 &&
+          new THREE.Vector2(foxG.position.x, foxG.position.z).distanceTo(new THREE.Vector2(nx, nz)) <= FOX_BITE
+        ) {
+          reduceEnergy(FOX_BITE_DAMAGE)
+          foxBiteCooldown = FOX_BITE_COOLDOWN
+          foxBiteAnimLeft = FOX_BITE_ANIM_TIME
         }
       }
     } else if (foxMode === 'sniff') {
