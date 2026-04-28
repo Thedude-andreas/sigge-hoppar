@@ -25,6 +25,7 @@ const FOX_BITE_DAMAGE = 24
 const FOX_BITE_COOLDOWN = 1.15
 const FOX_BITE_ANIM_TIME = 0.42
 const FOX_ATTACK_DIST = 0.68
+const START_ENERGY = 45
 
 /* --- AABB (Vector2: x, z) --- */
 type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
@@ -784,6 +785,8 @@ function main() {
   const elFox = document.getElementById('hud-fox') as HTMLParagraphElement | null
   const elSafe = document.getElementById('hud-safe') as HTMLParagraphElement | null
   const elGameOver = document.getElementById('hud-gameover') as HTMLParagraphElement | null
+  const elGameOverDialog = document.getElementById('gameover-dialog') as HTMLDivElement | null
+  const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
@@ -804,7 +807,7 @@ function main() {
   let playerFacing = 0
   let hopPhase = 0
   const TURN_SPD = 2.2
-  let energy = 45
+  let energy = START_ENERGY
   let onGround = true
   let gameOver = false
   let foxMode: FoxMode = 'hidden'
@@ -1049,6 +1052,7 @@ function main() {
     if (energy <= 0) {
       gameOver = true
       energy = 0
+      elGameOverDialog?.classList.remove('gameover-dialog--hidden')
       pVel.set(0, 0, 0)
       for (const button of touchButtons) {
         setTouchKey(button, false)
@@ -1131,6 +1135,46 @@ function main() {
   })
 
   let last = performance.now() / 1000
+
+  function restartGame() {
+    energy = START_ENERGY
+    gameOver = false
+    onGround = true
+    playerFacing = 0
+    hopPhase = 0
+    foxMode = 'hidden'
+    foxNext = 5
+    foxSniffLeft = 0
+    foxWalkPhase = 0
+    foxBiteCooldown = 0
+    foxBiteAnimLeft = 0
+    pVel.set(0, 0, 0)
+    siggeG.position.set(0, PLAYER_H, 0)
+    siggeG.rotation.set(0, 0, 0)
+    siggeVisual.position.set(0, 0, 0)
+    foxG.visible = false
+    foxG.position.set(0, 0, 12)
+    for (const c of carrots) {
+      c.userData.picked = false
+      c.visible = true
+    }
+    for (const button of touchButtons) {
+      setTouchKey(button, false)
+    }
+    for (const code of Object.keys(keys)) {
+      keys[code] = false
+    }
+    elGameOverDialog?.classList.add('gameover-dialog--hidden')
+    elGameOver?.classList.add('hud-gameover--hidden')
+    elFox?.classList.add('hud-fox--hidden')
+    elSafe?.classList.add('hud-safe--hidden')
+    if (elEnergy) {
+      elEnergy.style.width = `${(energy / ENERGY_MAX) * 100}%`
+    }
+    last = performance.now() / 1000
+  }
+
+  elRestart?.addEventListener('click', restartGame)
 
   function step(t: number) {
     const now = t / 1000

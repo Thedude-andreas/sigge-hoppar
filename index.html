@@ -28,6 +28,13 @@
         </div>
         <button class="touch-btn touch-btn--jump" data-key="Space" aria-label="Hoppa">Hopp</button>
       </div>
+      <div id="gameover-dialog" class="gameover-dialog--hidden" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
+        <div class="gameover-panel">
+          <p id="gameover-title">Game over</p>
+          <p>Sigge behöver mer energi.</p>
+          <button id="restart-game" type="button">Starta om</button>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

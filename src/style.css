@@ -123,6 +123,57 @@ canvas {
   pointer-events: none;
 }
 
+#gameover-dialog.gameover-dialog--hidden {
+  display: none;
+}
+
+#gameover-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(3, 10, 5, 0.58);
+}
+
+.gameover-panel {
+  width: min(92vw, 320px);
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 240, 210, 0.34);
+  border-radius: 8px;
+  background: rgba(16, 33, 18, 0.94);
+  color: #f7efd4;
+  text-align: center;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+}
+
+#gameover-title {
+  margin: 0;
+  font-size: 1.65rem;
+  font-weight: 800;
+}
+
+.gameover-panel p {
+  margin: 0.55rem 0 0;
+}
+
+#restart-game {
+  margin-top: 1rem;
+  min-width: 8.5rem;
+  height: 2.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  background: #d7b23a;
+  color: #1d1606;
+  font: 800 0.95rem/1 'Segoe UI', system-ui, sans-serif;
+  cursor: pointer;
+}
+
+#restart-game:active {
+  transform: translateY(1px);
+}
+
 .touch-pad {
   display: grid;
   grid-template-columns: repeat(3, 54px);
