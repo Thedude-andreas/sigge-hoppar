@@ -5,8 +5,9 @@ import { BUILD_TAG } from './version'
 /* --- Constant world layout --- */
 const INNER = 17.5
 const GROUND = 0
-const PLAYER_H = 0.55
-const PLAYER_R = 0.4
+const SIGGE_SCALE = 0.72
+const PLAYER_H = 0
+const PLAYER_R = 0.29
 const GRAVITY = 18
 const JUMP_V = 7.2
 const MOVE = 5.2
@@ -15,13 +16,27 @@ const FOX_TIMER_MIN = 8
 const FOX_TIMER_MAX = 18
 const FOX_SNIFF_TIME = 2.7
 const FOX_SNIFF_DIST = 1.35
-const CARROT_PICK = 1.1
-const FOX_BITE = 0.9
+const CARROT_PICK = 0.85
+const FOX_BITE = 0.74
 const ENERGY_MAX = 100
 const ENERGY_PER_CARROT = 18
 
 /* --- AABB (Vector2: x, z) --- */
 type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
+type RampSpec = {
+  x: number
+  zBottom: number
+  zTop: number
+  w: number
+  yBottom: number
+  yTop: number
+}
+type HutchSpec = {
+  w: number
+  d: number
+  doorX: number
+  doorW: number
+}
 type FoxMode = 'hidden' | 'chase' | 'sniff' | 'leave'
 
 function aabb2ContainsXZ(b: Box3XZ, x: number, z: number): boolean {
@@ -172,20 +187,102 @@ function buildScene() {
     scene.add(hedge)
   }
 
-  // Red house + simple decks
-  const houseW = 5
-  const houseD = 4.5
-  const houseH = 2.4
+  // Svensk enplansvilla: låg röd träpanel, vita omfattningar och inbyggt garage på ena gaveln.
+  const houseW = 13
+  const houseD = 8
+  const houseH = 2.65
   const houseG = new THREE.Group()
   const redMat = new THREE.MeshStandardMaterial({ color: 0xba2a20, roughness: 0.5 })
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf7f2e8, roughness: 0.55 })
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x3d332b, roughness: 0.7 })
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x8db6c9, roughness: 0.18, metalness: 0.05 })
+  const garageMat = new THREE.MeshStandardMaterial({ color: 0xe9e3d8, roughness: 0.62 })
   const deckMat = new THREE.MeshStandardMaterial({ color: 0x5c4030, roughness: 0.7 })
+
   const house = new THREE.Mesh(new THREE.BoxGeometry(houseW, houseH, houseD), redMat)
   house.position.set(0, houseH / 2 + 0.05, 0)
   houseG.add(house)
+
+  for (let x = -houseW / 2 + 0.35; x < houseW / 2; x += 0.7) {
+    const batten = new THREE.Mesh(new THREE.BoxGeometry(0.045, houseH + 0.04, 0.035), redMat)
+    batten.position.set(x, houseH / 2 + 0.08, houseD / 2 + 0.02)
+    houseG.add(batten)
+  }
+
+  const roofW = houseW + 0.8
+  const roofD = houseD + 1
+  const eaveY = houseH + 0.2
+  const ridgeY = houseH + 1.15
+  const roofGeo = new THREE.BufferGeometry()
+  roofGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+    -roofW / 2, eaveY, -roofD / 2,
+    roofW / 2, eaveY, -roofD / 2,
+    -roofW / 2, ridgeY, 0,
+    roofW / 2, ridgeY, 0,
+    -roofW / 2, eaveY, roofD / 2,
+    roofW / 2, eaveY, roofD / 2,
+  ], 3))
+  roofGeo.setIndex([
+    0, 1, 3, 0, 3, 2,
+    2, 3, 5, 2, 5, 4,
+    0, 2, 4,
+    1, 5, 3,
+    0, 4, 5, 0, 5, 1,
+  ])
+  roofGeo.computeVertexNormals()
+  const houseRoof = new THREE.Mesh(roofGeo, roofMat)
+  houseG.add(houseRoof)
+
+  const addWindow = (x: number, z: number, side: 'front' | 'back') => {
+    const dir = side === 'front' ? 1 : -1
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.05, 0.08), whiteMat)
+    trim.position.set(x, 1.58, z + dir * 0.045)
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.72, 0.095), glassMat)
+    glass.position.set(x, 1.58, z + dir * 0.095)
+    const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.76, 0.11), whiteMat)
+    crossV.position.copy(glass.position)
+    crossV.position.z += dir * 0.01
+    const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.07, 0.11), whiteMat)
+    crossH.position.copy(glass.position)
+    crossH.position.z += dir * 0.012
+    houseG.add(trim, glass, crossV, crossH)
+  }
+
+  const addGableWindow = (x: number, y: number, z: number) => {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9, 1.3), whiteMat)
+    trim.position.set(x, y, z)
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.62, 0.96), glassMat)
+    glass.position.set(x - 0.015, y, z)
+    houseG.add(trim, glass)
+  }
+
+  addWindow(-4.4, houseD / 2, 'front')
+  addWindow(-2.6, houseD / 2, 'front')
+  addWindow(0.6, houseD / 2, 'front')
+  addWindow(2.4, houseD / 2, 'front')
+  addWindow(-3.6, -houseD / 2, 'back')
+  addWindow(-1.4, -houseD / 2, 'back')
+  addWindow(1.6, -houseD / 2, 'back')
+  addGableWindow(-houseW / 2 - 0.045, 1.62, -1.65)
+
+  const doorTrim = new THREE.Mesh(new THREE.BoxGeometry(1.15, 2.0, 0.09), whiteMat)
+  doorTrim.position.set(-0.95, 1.05, houseD / 2 + 0.055)
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.72, 0.11), new THREE.MeshStandardMaterial({ color: 0x6a2f23, roughness: 0.58 }))
+  door.position.set(-0.95, 0.96, houseD / 2 + 0.12)
+  houseG.add(doorTrim, door)
+
+  const garageDoor = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.85, 2.9), garageMat)
+  garageDoor.position.set(houseW / 2 + 0.07, 1.05, 1.55)
+  houseG.add(garageDoor)
+  for (const y of [0.55, 0.95, 1.35]) {
+    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.035, 2.7), whiteMat)
+    groove.position.set(houseW / 2 + 0.145, y, 1.55)
+    houseG.add(groove)
+  }
+
   for (const [dx, dz, w, d] of [
-    [0, houseD / 2 + 0.5, 3.2, 1.2], // back
-    [houseW / 2 + 0.4, 0, 1.0, 2.0],
-    [-houseW / 2 - 0.4, 0, 1.0, 2.0],
+    [-0.95, houseD / 2 + 0.55, 2.0, 1.1],
+    [houseW / 2 + 0.45, 1.55, 0.9, 3.4],
   ] as [number, number, number, number][]) {
     const deck = new THREE.Mesh(
       new THREE.BoxGeometry(w, 0.16, d),
@@ -194,7 +291,7 @@ function buildScene() {
     deck.position.set(dx, 0.1, dz)
     houseG.add(deck)
   }
-  houseG.position.set(-11, 0, 9)
+  houseG.position.set(-9.8, 0, 8.3)
   scene.add(houseG)
 
   // Colliders for house (so Sigge can’t run through)
@@ -205,35 +302,119 @@ function buildScene() {
     y1: houseH,
   }
 
-  // Rabbit hutch (safe zone) — open wire frame look
+  // Kaninbur: ram med hönsnät, vilhylla, ramp, bolåda och kattlucka.
   const hutchG = new THREE.Group()
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.6 })
-  const hutchW = 2.2
-  const hutchD = 1.4
-  const hutchH = 1.2
-  hutchG.add(new THREE.Mesh(new THREE.BoxGeometry(hutchW, 0.1, hutchD), frameMat).translateY(0.05))
-  hutchG.add(
-    new THREE.Mesh(new THREE.BoxGeometry(0.08, hutchH, hutchD), frameMat)
-      .translateX(-hutchW / 2)
-      .translateY(hutchH / 2 + 0.1),
-  )
-  hutchG.add(
-    new THREE.Mesh(new THREE.BoxGeometry(0.08, hutchH, hutchD), frameMat)
-      .translateX(hutchW / 2)
-      .translateY(hutchH / 2 + 0.1),
-  )
-  hutchG.add(
-    new THREE.Mesh(new THREE.BoxGeometry(hutchW, hutchH, 0.08), frameMat)
-      .translateZ(-hutchD / 2)
-      .translateY(hutchH / 2 + 0.1),
-  )
-  const roof = new THREE.Mesh(
-    new THREE.ConeGeometry(1.2, 0.4, 4),
-    new THREE.MeshStandardMaterial({ color: 0x5a2a1a, roughness: 0.6 }),
-  )
-  roof.rotation.y = Math.PI / 4
-  roof.position.set(0, hutchH + 0.28, 0)
-  hutchG.add(roof)
+  const wireMat = new THREE.MeshStandardMaterial({ color: 0xc7d2cb, roughness: 0.35, metalness: 0.2 })
+  const shelfMat = new THREE.MeshStandardMaterial({ color: 0x8a603d, roughness: 0.7 })
+  const boxMat = new THREE.MeshStandardMaterial({ color: 0x7a4f2f, roughness: 0.8 })
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x140d09 })
+  const hutchW = 2.6
+  const hutchD = 2.5
+  const hutchH = 1.55
+  const hutchSpec: HutchSpec = {
+    w: hutchW,
+    d: hutchD,
+    doorX: -0.62,
+    doorW: 0.68,
+  }
+  const rail = 0.07
+  const wire = 0.012
+  const addBox = (
+    sx: number,
+    sy: number,
+    sz: number,
+    x: number,
+    y: number,
+    z: number,
+    mat: THREE.Material = frameMat,
+  ) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat)
+    mesh.position.set(x, y, z)
+    hutchG.add(mesh)
+    return mesh
+  }
+
+  // Träram med stolpar och räls runt botten och tak.
+  for (const x of [-hutchW / 2, hutchW / 2]) {
+    for (const z of [-hutchD / 2, hutchD / 2]) {
+      addBox(rail, hutchH, rail, x, hutchH / 2, z)
+    }
+  }
+  for (const y of [rail / 2, hutchH - rail / 2]) {
+    for (const z of [-hutchD / 2, hutchD / 2]) {
+      addBox(hutchW + rail, rail, rail, 0, y, z)
+    }
+    for (const x of [-hutchW / 2, hutchW / 2]) {
+      addBox(rail, rail, hutchD + rail, x, y, 0)
+    }
+  }
+
+  // Hönsnät på fyra väggar.
+  for (let i = 1; i < 6; i++) {
+    const x = -hutchW / 2 + (hutchW * i) / 6
+    addBox(wire, hutchH - rail * 2, wire, x, hutchH / 2, hutchD / 2 + wire, wireMat)
+    addBox(wire, hutchH - rail * 2, wire, x, hutchH / 2, -hutchD / 2 - wire, wireMat)
+  }
+  for (let i = 1; i < 6; i++) {
+    const z = -hutchD / 2 + (hutchD * i) / 6
+    addBox(wire, hutchH - rail * 2, wire, hutchW / 2 + wire, hutchH / 2, z, wireMat)
+    addBox(wire, hutchH - rail * 2, wire, -hutchW / 2 - wire, hutchH / 2, z, wireMat)
+  }
+  for (let i = 1; i < 5; i++) {
+    const y = rail + ((hutchH - rail * 2) * i) / 5
+    addBox(hutchW - rail, wire, wire, 0, y, hutchD / 2 + wire, wireMat)
+    addBox(hutchW - rail, wire, wire, 0, y, -hutchD / 2 - wire, wireMat)
+    addBox(wire, wire, hutchD - rail, hutchW / 2 + wire, y, 0, wireMat)
+    addBox(wire, wire, hutchD - rail, -hutchW / 2 - wire, y, 0, wireMat)
+  }
+
+  // Nättak.
+  for (let i = 1; i < 6; i++) {
+    const x = -hutchW / 2 + (hutchW * i) / 6
+    const z = -hutchD / 2 + (hutchD * i) / 6
+    addBox(wire, wire, hutchD - rail, x, hutchH + wire, 0, wireMat)
+    addBox(hutchW - rail, wire, wire, 0, hutchH + wire * 2, z, wireMat)
+  }
+
+  // Liten kattlucka i frontnätet.
+  addBox(0.58, 0.4, 0.035, hutchSpec.doorX, 0.3, hutchD / 2 + 0.035, shadowMat)
+  addBox(0.68, 0.045, 0.055, hutchSpec.doorX, 0.52, hutchD / 2 + 0.06, frameMat)
+  addBox(0.045, 0.44, 0.055, hutchSpec.doorX - hutchSpec.doorW / 2, 0.3, hutchD / 2 + 0.06, frameMat)
+  addBox(0.045, 0.44, 0.055, hutchSpec.doorX + hutchSpec.doorW / 2, 0.3, hutchD / 2 + 0.06, frameMat)
+
+  // Inredning: bolåda, vilhylla och ramp.
+  const shelfY = 0.65
+  addBox(0.78, 0.5, 0.64, -0.72, 0.25, -0.7, boxMat)
+  addBox(0.42, 0.3, 0.045, -0.72, 0.22, -0.36, shadowMat)
+  addBox(0.94, 0.08, 0.66, 0.48, shelfY - 0.04, -0.62, shelfMat)
+  addBox(0.08, 0.32, 0.08, 0.1, 0.62, -0.88, frameMat)
+  addBox(0.08, 0.32, 0.08, 0.86, 0.62, -0.88, frameMat)
+
+  const rampSpec: RampSpec = {
+    x: 0.28,
+    zBottom: 0.78,
+    zTop: -0.31,
+    w: 0.52,
+    yBottom: 0.08,
+    yTop: shelfY,
+  }
+  const rampRun = rampSpec.zBottom - rampSpec.zTop
+  const rampRise = rampSpec.yTop - rampSpec.yBottom
+  const rampLen = Math.hypot(rampRun, rampRise)
+  const rampAngle = Math.atan2(rampRise, rampRun)
+  const rampG = new THREE.Group()
+  rampG.position.set(rampSpec.x, (rampSpec.yBottom + rampSpec.yTop) / 2, (rampSpec.zBottom + rampSpec.zTop) / 2)
+  rampG.rotation.x = rampAngle
+  const rampBoard = new THREE.Mesh(new THREE.BoxGeometry(rampSpec.w, 0.045, rampLen), shelfMat)
+  rampG.add(rampBoard)
+  for (let i = 0; i < 5; i++) {
+    const cleat = new THREE.Mesh(new THREE.BoxGeometry(rampSpec.w + 0.06, 0.04, 0.035), frameMat)
+    cleat.position.set(0, 0.045, rampLen * (0.34 - i * 0.17))
+    rampG.add(cleat)
+  }
+  hutchG.add(rampG)
+
   hutchG.position.set(5.2, 0, 6.2)
   scene.add(hutchG)
 
@@ -243,10 +424,10 @@ function buildScene() {
   // Safe AABB: inside the hutch
   // min.x/max.x = world x; min.y/max.y = world z
   const hutchAabb: Box3XZ = {
-    min: new THREE.Vector2(hutchG.position.x - 0.75, hutchG.position.z - 0.55),
-    max: new THREE.Vector2(hutchG.position.x + 0.75, hutchG.position.z + 0.55),
+    min: new THREE.Vector2(hutchG.position.x - hutchW / 2, hutchG.position.z - hutchD / 2),
+    max: new THREE.Vector2(hutchG.position.x + hutchW / 2, hutchG.position.z + hutchD / 2),
     y0: 0,
-    y1: 1.2,
+    y1: hutchH,
   }
 
   // Carrots
@@ -348,6 +529,7 @@ function buildScene() {
 
   const siggeTail = makeSiggeTail(siggeMat)
   siggeVisual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail)
+  siggeVisual.scale.setScalar(SIGGE_SCALE)
   siggeG.add(siggeVisual)
   siggeG.position.set(0, PLAYER_H, 0)
   scene.add(siggeG)
@@ -441,6 +623,8 @@ function buildScene() {
     houseAabb,
     hutchAabb,
     hutchCenter,
+    rampSpec,
+    hutchSpec,
   }
 }
 
@@ -454,7 +638,7 @@ function main() {
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
   }
-  const { scene, siggeG, siggeVisual, foxG, carrots, houseAabb, hutchAabb, hutchCenter } = buildScene()
+  const { scene, siggeG, siggeVisual, foxG, carrots, houseAabb, hutchAabb, hutchCenter, rampSpec, hutchSpec } = buildScene()
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200)
   const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -483,6 +667,111 @@ function main() {
     return (
       aabb2ContainsXZ(hutchAabb, x, z) && y + PLAYER_H * 0.3 >= hutchAabb.y0 && y < hutchAabb.y1 + 0.2
     )
+  }
+
+  function hutchFloorY(x: number, z: number): number {
+    if (!aabb2ContainsXZ(hutchAabb, x, z)) {
+      return GROUND
+    }
+
+    const localX = x - hutchCenter.x
+    const localZ = z - hutchCenter.z
+    let floorY = GROUND
+
+    const onShelf = (
+      localX >= 0.43 - 0.43 - PLAYER_R * 0.35 &&
+      localX <= 0.43 + 0.43 + PLAYER_R * 0.35 &&
+      localZ >= -0.48 - 0.31 - PLAYER_R * 0.35 &&
+      localZ <= -0.48 + 0.31 + PLAYER_R * 0.35
+    )
+    if (onShelf) {
+      floorY = Math.max(floorY, rampSpec.yTop)
+    }
+
+    const onRamp = (
+      localX >= rampSpec.x - rampSpec.w / 2 - PLAYER_R * 0.25 &&
+      localX <= rampSpec.x + rampSpec.w / 2 + PLAYER_R * 0.25 &&
+      localZ >= rampSpec.zTop &&
+      localZ <= rampSpec.zBottom
+    )
+    if (onRamp) {
+      const t = THREE.MathUtils.clamp((rampSpec.zBottom - localZ) / (rampSpec.zBottom - rampSpec.zTop), 0, 1)
+      floorY = Math.max(floorY, THREE.MathUtils.lerp(rampSpec.yBottom, rampSpec.yTop, t))
+    }
+
+    return floorY
+  }
+
+  function inHutchDoor(localX: number): boolean {
+    return Math.abs(localX - hutchSpec.doorX) <= hutchSpec.doorW / 2
+  }
+
+  function resolveHutchWalls(prevX: number, prevZ: number, x: number, z: number): { x: number; z: number } {
+    const halfW = hutchSpec.w / 2
+    const halfD = hutchSpec.d / 2
+    const prevLocalX = prevX - hutchCenter.x
+    const prevLocalZ = prevZ - hutchCenter.z
+    const localX = x - hutchCenter.x
+    const localZ = z - hutchCenter.z
+    const prevInside = Math.abs(prevLocalX) <= halfW && Math.abs(prevLocalZ) <= halfD
+    const nextInside = Math.abs(localX) <= halfW && Math.abs(localZ) <= halfD
+    const nearDoor = inHutchDoor((prevLocalX + localX) / 2)
+    const throughDoor = nearDoor && (
+      (prevLocalZ <= halfD && localZ >= halfD - PLAYER_R) ||
+      (prevLocalZ >= halfD && localZ <= halfD + PLAYER_R)
+    )
+
+    if (throughDoor) {
+      return { x, z }
+    }
+
+    if (prevInside) {
+      return {
+        x: hutchCenter.x + THREE.MathUtils.clamp(localX, -halfW + PLAYER_R, halfW - PLAYER_R),
+        z: hutchCenter.z + THREE.MathUtils.clamp(localZ, -halfD + PLAYER_R, halfD - PLAYER_R),
+      }
+    }
+
+    if (nextInside) {
+      const dxLeft = Math.abs(prevLocalX + halfW)
+      const dxRight = Math.abs(prevLocalX - halfW)
+      const dzBack = Math.abs(prevLocalZ + halfD)
+      const dzFront = Math.abs(prevLocalZ - halfD)
+      const nearest = Math.min(dxLeft, dxRight, dzBack, dzFront)
+      if (nearest === dxLeft) {
+        return { x: hutchCenter.x - halfW - PLAYER_R, z }
+      }
+      if (nearest === dxRight) {
+        return { x: hutchCenter.x + halfW + PLAYER_R, z }
+      }
+      if (nearest === dzBack) {
+        return { x, z: hutchCenter.z - halfD - PLAYER_R }
+      }
+      return { x, z: hutchCenter.z + halfD + PLAYER_R }
+    }
+
+    const overlapsHutchBand = Math.abs(localX) <= halfW + PLAYER_R && Math.abs(localZ) <= halfD + PLAYER_R
+    if (overlapsHutchBand) {
+      const fromLeft = Math.abs(localX + halfW)
+      const fromRight = Math.abs(localX - halfW)
+      const fromBack = Math.abs(localZ + halfD)
+      const fromFront = Math.abs(localZ - halfD)
+      const nearest = Math.min(fromLeft, fromRight, fromBack, fromFront)
+      if (nearest === fromLeft) {
+        return { x: hutchCenter.x - halfW - PLAYER_R, z }
+      }
+      if (nearest === fromRight) {
+        return { x: hutchCenter.x + halfW + PLAYER_R, z }
+      }
+      if (nearest === fromBack) {
+        return { x, z: hutchCenter.z - halfD - PLAYER_R }
+      }
+      if (!inHutchDoor(localX)) {
+        return { x, z: hutchCenter.z + halfD + PLAYER_R }
+      }
+    }
+
+    return { x, z }
   }
 
   function trySpawnFox() {
@@ -700,6 +989,8 @@ function main() {
     nx = THREE.MathUtils.clamp(nx, -INNER + PLAYER_R, INNER - PLAYER_R)
     nz = THREE.MathUtils.clamp(nz, -INNER + PLAYER_R, INNER - PLAYER_R)
 
+    const prevX = siggeG.position.x
+    const prevZ = siggeG.position.z
     const hOut = resolveCircleAabb2(
       houseAabb.min.x,
       houseAabb.min.y,
@@ -712,10 +1003,16 @@ function main() {
     nx = hOut.x
     nz = hOut.z
 
+    const hutchOut = resolveHutchWalls(prevX, prevZ, nx, nz)
+    nx = hutchOut.x
+    nz = hutchOut.z
+
     siggeG.position.x = nx
     siggeG.position.z = nz
-    if (ny <= PLAYER_H) {
-      ny = PLAYER_H
+    const supportY = hutchFloorY(nx, nz)
+    const groundedY = supportY + PLAYER_H
+    if (ny <= groundedY + 0.14) {
+      ny = groundedY
       pVel.y = 0
       onGround = true
     } else {
