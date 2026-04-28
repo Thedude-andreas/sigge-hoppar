@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a120a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sigge hoppar" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <title>Sigge hoppar</title>
   </head>
   <body>
@@ -22,6 +27,19 @@
       <div id="touch-controls" aria-label="Spelkontroller">
         <div id="jump-zone" class="touch-zone" aria-label="Hoppa"></div>
         <div id="move-zone" class="touch-zone" aria-label="Rörelse"></div>
+      </div>
+      <div id="start-screen" class="mobile-overlay mobile-overlay--hidden">
+        <div class="mobile-panel">
+          <p class="mobile-panel-title">Sigge hoppar</p>
+          <p>Spela i liggande helskärm.</p>
+          <button id="start-fullscreen" type="button">Starta spelet</button>
+        </div>
+      </div>
+      <div id="rotate-screen" class="mobile-overlay mobile-overlay--hidden">
+        <div class="mobile-panel">
+          <p class="mobile-panel-title">Vrid mobilen</p>
+          <p>Spelet fungerar bäst i liggande läge.</p>
+        </div>
       </div>
       <div id="gameover-dialog" class="gameover-dialog--hidden" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
         <div class="gameover-panel">

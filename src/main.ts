@@ -799,6 +799,9 @@ function main() {
   const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
   const elMoveZone = document.getElementById('move-zone') as HTMLDivElement | null
   const elJumpZone = document.getElementById('jump-zone') as HTMLDivElement | null
+  const elStartScreen = document.getElementById('start-screen') as HTMLDivElement | null
+  const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
+  const elStartFullscreen = document.getElementById('start-fullscreen') as HTMLButtonElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
@@ -837,8 +840,34 @@ function main() {
   let foxWalkPhase = 0
   let foxBiteCooldown = 0
   let foxBiteAnimLeft = 0
+  let mobileStarted = !isMobileLike()
   const foxTarget = new THREE.Vector3()
   const foxLeaveTarget = new THREE.Vector3()
+
+  function isMobileLike(): boolean {
+    return navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches
+  }
+
+  function isPortrait(): boolean {
+    return window.innerHeight > window.innerWidth
+  }
+
+  function mobileBlocked(): boolean {
+    return isMobileLike() && (!mobileStarted || isPortrait())
+  }
+
+  function updateMobileOverlays() {
+    const mobile = isMobileLike()
+    const portrait = isPortrait()
+    elStartScreen?.classList.toggle('mobile-overlay--hidden', !mobile || mobileStarted || portrait)
+    elRotateScreen?.classList.toggle('mobile-overlay--hidden', !mobile || !portrait)
+    if (!mobile) {
+      mobileStarted = true
+    }
+    if (mobileBlocked()) {
+      resetTouchControls()
+    }
+  }
 
   function inSafeZone(x: number, y: number, z: number): boolean {
     return (
@@ -1089,9 +1118,11 @@ function main() {
     camera.aspect = w / h
     camera.updateProjectionMatrix()
     renderer.setSize(w, h)
+    updateMobileOverlays()
   }
 
   window.addEventListener('resize', onResize)
+  window.addEventListener('orientationchange', updateMobileOverlays)
   onResize()
 
   function bindKeyFromCode(e: KeyboardEvent, on: boolean) {
@@ -1171,6 +1202,23 @@ function main() {
   })
   window.addEventListener('blur', resetTouchControls)
 
+  elStartFullscreen?.addEventListener('click', async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+      }
+    } catch {
+      // Fullscreen is best-effort; browsers may reject it.
+    }
+    try {
+      await (screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> }).lock?.('landscape')
+    } catch {
+      // Orientation lock is also best-effort, especially on iOS.
+    }
+    mobileStarted = true
+    updateMobileOverlays()
+  })
+
   let last = performance.now() / 1000
 
   function restartGame() {
@@ -1217,6 +1265,10 @@ function main() {
     last = now
     if (dt > 0.1) {
       dt = 0.1
+    }
+    if (mobileBlocked()) {
+      renderer.render(scene, camera)
+      return
     }
     if (foxBiteCooldown > 0) {
       foxBiteCooldown = Math.max(0, foxBiteCooldown - dt)

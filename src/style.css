@@ -117,6 +117,57 @@ canvas {
   pointer-events: none;
 }
 
+.mobile-overlay.mobile-overlay--hidden {
+  display: none;
+}
+
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(3, 10, 5, 0.72);
+}
+
+.mobile-panel {
+  width: min(92vw, 340px);
+  padding: 1.25rem;
+  border: 1px solid rgba(255, 240, 210, 0.34);
+  border-radius: 8px;
+  background: rgba(16, 33, 18, 0.95);
+  color: #f7efd4;
+  text-align: center;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+}
+
+.mobile-panel-title {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 800;
+}
+
+.mobile-panel p {
+  margin: 0.55rem 0 0;
+}
+
+#start-fullscreen {
+  margin-top: 1rem;
+  min-width: 9rem;
+  height: 2.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  background: #d7b23a;
+  color: #1d1606;
+  font: 800 0.95rem/1 'Segoe UI', system-ui, sans-serif;
+  cursor: pointer;
+}
+
+#start-fullscreen:active {
+  transform: translateY(1px);
+}
+
 #gameover-dialog.gameover-dialog--hidden {
   display: none;
 }
@@ -187,7 +238,7 @@ canvas {
   width: 56%;
 }
 
-@media (hover: none), (pointer: coarse), (max-width: 760px) {
+@media (hover: none), (pointer: coarse) {
   #touch-controls {
     display: flex;
   }
