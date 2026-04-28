@@ -138,14 +138,20 @@ function buildScene() {
   ground.position.y = GROUND
   scene.add(ground)
 
-  // Morotsland: lighter patch
-  const patch = new THREE.Mesh(
-    new THREE.CircleGeometry(7.5, 40),
-    new THREE.MeshStandardMaterial({ color: 0x4e9a48, roughness: 0.88 }),
-  )
-  patch.rotation.x = -Math.PI / 2
-  patch.position.set(8, 0.02, -6)
+  // Morotsland: fyrkantig jordbädd med raka planteringsrader.
+  const carrotPatchCenter = new THREE.Vector2(8, -6)
+  const carrotPatchW = 8.6
+  const carrotPatchD = 5.8
+  const soilMat = new THREE.MeshStandardMaterial({ color: 0x5a3821, roughness: 0.96 })
+  const soilDarkMat = new THREE.MeshStandardMaterial({ color: 0x3d2819, roughness: 0.98 })
+  const patch = new THREE.Mesh(new THREE.BoxGeometry(carrotPatchW, 0.08, carrotPatchD), soilMat)
+  patch.position.set(carrotPatchCenter.x, 0.04, carrotPatchCenter.y)
   scene.add(patch)
+  for (const rowZ of [-1.85, -0.62, 0.62, 1.85]) {
+    const row = new THREE.Mesh(new THREE.BoxGeometry(carrotPatchW - 0.6, 0.035, 0.16), soilDarkMat)
+    row.position.set(carrotPatchCenter.x, 0.095, carrotPatchCenter.y + rowZ)
+    scene.add(row)
+  }
 
   // Hedges (perimeter)
   const hedgeMat = new THREE.MeshStandardMaterial({ color: 0x1f5a24, roughness: 0.8 })
@@ -245,33 +251,51 @@ function buildScene() {
 
   // Carrots
   const carrots: THREE.Object3D[] = []
-  const carrotMat = new THREE.MeshStandardMaterial({ color: 0xffa020, emissive: 0x221100 })
-  const stemMat = new THREE.MeshStandardMaterial({ color: 0x1a4a1a, roughness: 0.5 })
-  const centerPatch = new THREE.Vector2(8, -6)
-  for (let i = 0; i < 12; i++) {
+  const carrotMat = new THREE.MeshStandardMaterial({ color: 0xe9781d, emissive: 0x1f0a00, roughness: 0.72 })
+  const carrotTopMat = new THREE.MeshStandardMaterial({ color: 0xf28a24, roughness: 0.68 })
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x286f22, roughness: 0.75 })
+  const makeCarrot = (lean: number) => {
     const g = new THREE.Group()
-    const r = 1.5 + Math.random() * 4.2
-    const a = (i / 12) * Math.PI * 2 + Math.random() * 0.5
-    const x = centerPatch.x + Math.cos(a) * r
-    const z = centerPatch.y + Math.sin(a) * r
-    g.add(
-      new THREE.Mesh(
-        new THREE.ConeGeometry(0.15, 0.55, 6),
-        carrotMat,
+
+    const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.18, 0.24, 12), carrotTopMat)
+    shoulder.position.y = 0.18
+    g.add(shoulder)
+
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.105, 0.34, 12), carrotMat)
+    tip.rotation.x = Math.PI
+    tip.position.y = 0.13
+    g.add(tip)
+
+    for (let i = 0; i < 7; i++) {
+      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.44 + (i % 3) * 0.07, 5), stemMat)
+      const angle = (i / 7) * Math.PI * 2 + lean
+      const tilt = 0.35 + (i % 2) * 0.18
+      blade.position.set(Math.cos(angle) * 0.045, 0.43, Math.sin(angle) * 0.045)
+      blade.rotation.set(Math.sin(angle) * tilt, angle, -Math.cos(angle) * tilt)
+      g.add(blade)
+    }
+
+    return g
+  }
+  const carrotRows = [-1.85, -0.62, 0.62, 1.85]
+  const carrotCols = [-3.2, -1.6, 0, 1.6, 3.2]
+  for (let row = 0; row < carrotRows.length; row++) {
+    for (let col = 0; col < carrotCols.length; col++) {
+      if ((row === 0 && col === 4) || (row === 3 && col === 0)) {
+        continue
+      }
+      const g = makeCarrot(row * 0.45 + col * 0.18)
+      const offsetX = ((row + col) % 2 === 0 ? -0.08 : 0.08)
+      const offsetZ = col % 2 === 0 ? 0.04 : -0.04
+      g.position.set(
+        carrotPatchCenter.x + carrotCols[col] + offsetX,
+        0.08,
+        carrotPatchCenter.y + carrotRows[row] + offsetZ,
       )
-        .translateY(0.2),
-    )
-    g.add(
-      new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 0.2, 5),
-        stemMat,
-      )
-        .translateY(0.5),
-    )
-    g.position.set(x, 0, z)
-    g.rotation.set(0, Math.random() * 6, 0)
-    scene.add(g)
-    carrots.push(g)
+      g.rotation.y = ((row + col) % 3 - 1) * 0.08
+      scene.add(g)
+      carrots.push(g)
+    }
   }
 
   // Sigge: root = logik, visual = kropp (skuttar ovanpå)
