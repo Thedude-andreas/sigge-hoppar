@@ -20,13 +20,8 @@
         <p id="hud-gameover" class="hud-gameover--hidden">Game over</p>
       </div>
       <div id="touch-controls" aria-label="Spelkontroller">
-        <div class="touch-pad" aria-label="Rörelse">
-          <button class="touch-btn touch-btn--up" data-key="ArrowUp" aria-label="Framåt">▲</button>
-          <button class="touch-btn touch-btn--left" data-key="ArrowLeft" aria-label="Sväng vänster">◀</button>
-          <button class="touch-btn touch-btn--down" data-key="ArrowDown" aria-label="Bakåt">▼</button>
-          <button class="touch-btn touch-btn--right" data-key="ArrowRight" aria-label="Sväng höger">▶</button>
-        </div>
-        <button class="touch-btn touch-btn--jump" data-key="Space" aria-label="Hoppa">Hopp</button>
+        <div id="jump-zone" class="touch-zone" aria-label="Hoppa"></div>
+        <div id="move-zone" class="touch-zone" aria-label="Rörelse"></div>
       </div>
       <div id="gameover-dialog" class="gameover-dialog--hidden" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
         <div class="gameover-panel">

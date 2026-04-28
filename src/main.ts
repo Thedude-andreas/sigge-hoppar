@@ -703,12 +703,24 @@ function buildScene() {
   const rightFoxEar = leftFoxEar.clone()
   rightFoxEar.rotation.set(0.22, -0.18, 0.15)
   rightFoxEar.position.x = 0.13
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7, 12), orange)
-  tail.rotation.x = -1.05
-  tail.position.set(0, 0.38, -0.56)
-  const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), cream)
-  tailTip.scale.set(0.9, 0.75, 1.05)
-  tailTip.position.set(0, 0.63, -0.83)
+  const tail = new THREE.Group()
+  tail.position.set(0, 0.42, -0.46)
+  tail.rotation.x = -0.46
+  for (const [z, y, sx, sy, sz] of [
+    [-0.08, 0.0, 0.15, 0.12, 0.22],
+    [-0.25, 0.05, 0.19, 0.15, 0.28],
+    [-0.44, 0.09, 0.22, 0.17, 0.3],
+    [-0.62, 0.13, 0.18, 0.15, 0.24],
+  ] as [number, number, number, number, number][]) {
+    const segment = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), orange)
+    segment.scale.set(sx, sy, sz)
+    segment.position.set(0, y, z)
+    tail.add(segment)
+  }
+  const tailTip = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), cream)
+  tailTip.scale.set(0.16, 0.13, 0.2)
+  tailTip.position.set(0, 0.17, -0.78)
+  tail.add(tailTip)
   const legs: THREE.Mesh[] = []
   for (const x of [-0.18, 0.18]) {
     for (const z of [-0.25, 0.28]) {
@@ -726,7 +738,6 @@ function buildScene() {
     mouthLine,
     lowerJaw: lowerJawG,
     tail,
-    tailTip,
     legs,
     baseY: 0,
     bodyY: fBody.position.y,
@@ -743,7 +754,7 @@ function buildScene() {
     lowerJawZ: lowerJawG.position.z,
     lowerJawRotX: lowerJawG.rotation.x,
     tailRotX: tail.rotation.x,
-    tailTipY: tailTip.position.y,
+    tailRotZ: tail.rotation.z,
   }
   foxG.add(
     fBody,
@@ -758,7 +769,6 @@ function buildScene() {
     leftFoxEar,
     rightFoxEar,
     tail,
-    tailTip,
     ...legs,
   )
   foxG.visible = false
@@ -787,6 +797,8 @@ function main() {
   const elGameOver = document.getElementById('hud-gameover') as HTMLParagraphElement | null
   const elGameOverDialog = document.getElementById('gameover-dialog') as HTMLDivElement | null
   const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
+  const elMoveZone = document.getElementById('move-zone') as HTMLDivElement | null
+  const elJumpZone = document.getElementById('jump-zone') as HTMLDivElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
@@ -801,6 +813,15 @@ function main() {
   root.appendChild(renderer.domElement)
 
   const keys: Record<string, boolean> = {}
+  const touchMove = {
+    active: false,
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    x: 0,
+    y: 0,
+  }
+  let touchJumpQueued = false
   const pVel = new THREE.Vector3(0, 0, 0)
   const foxP = new THREE.Vector3(0, 0, 12)
   /** Var Sigge tittar (Y-rotation) — kameran följer bakifrån. */
@@ -997,8 +1018,9 @@ function main() {
     parts.lowerJaw.position.y = parts.lowerJawY + headNod - biteDrop
     parts.lowerJaw.position.z = parts.lowerJawZ + biteReach
     parts.lowerJaw.rotation.x = parts.lowerJawRotX + biteOpen * 0.52
-    parts.tail.rotation.x = parts.tailRotX + Math.sin(foxWalkPhase + 0.8) * 0.14
-    parts.tailTip.position.y = parts.tailTipY + Math.sin(foxWalkPhase + 0.8) * 0.035
+    const tailWave = Math.sin(foxWalkPhase + 1.4)
+    parts.tail.rotation.x = parts.tailRotX + (moving ? 0.04 : 0.015) * tailWave
+    parts.tail.rotation.z = parts.tailRotZ + (moving ? 0.13 : 0.04) * tailWave
 
     for (let i = 0; i < parts.legs.length; i++) {
       const leg = parts.legs[i] as THREE.Mesh
@@ -1054,9 +1076,7 @@ function main() {
       energy = 0
       elGameOverDialog?.classList.remove('gameover-dialog--hidden')
       pVel.set(0, 0, 0)
-      for (const button of touchButtons) {
-        setTouchKey(button, false)
-      }
+      resetTouchControls()
       for (const code of Object.keys(keys)) {
         keys[code] = false
       }
@@ -1095,44 +1115,61 @@ function main() {
     keys[e.code] = false
   })
 
-  function setTouchKey(button: HTMLButtonElement, on: boolean) {
-    const code = button.dataset.key
-    if (!code) {
-      return
-    }
-    keys[code] = on
-    button.classList.toggle('is-pressed', on)
+  function resetTouchControls() {
+    touchMove.active = false
+    touchMove.pointerId = -1
+    touchMove.x = 0
+    touchMove.y = 0
+    touchJumpQueued = false
   }
 
-  const touchButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.touch-btn[data-key]'))
-  for (const button of touchButtons) {
-    button.addEventListener('pointerdown', (e) => {
-      e.preventDefault()
-      button.setPointerCapture(e.pointerId)
-      setTouchKey(button, true)
-    })
-    button.addEventListener('pointerup', (e) => {
-      e.preventDefault()
-      setTouchKey(button, false)
-      if (button.hasPointerCapture(e.pointerId)) {
-        button.releasePointerCapture(e.pointerId)
+  function updateTouchMove(e: PointerEvent) {
+    const maxMove = Math.max(36, Math.min(window.innerWidth, window.innerHeight) * 0.16)
+    const dx = THREE.MathUtils.clamp((e.clientX - touchMove.startX) / maxMove, -1, 1)
+    const dy = THREE.MathUtils.clamp((e.clientY - touchMove.startY) / maxMove, -1, 1)
+    const dead = 0.12
+    touchMove.x = Math.abs(dx) < dead ? 0 : dx
+    touchMove.y = Math.abs(dy) < dead ? 0 : dy
+  }
+
+  elMoveZone?.addEventListener('pointerdown', (e) => {
+    e.preventDefault()
+    touchMove.active = true
+    touchMove.pointerId = e.pointerId
+    touchMove.startX = e.clientX
+    touchMove.startY = e.clientY
+    touchMove.x = 0
+    touchMove.y = 0
+    elMoveZone.setPointerCapture(e.pointerId)
+  })
+  elMoveZone?.addEventListener('pointermove', (e) => {
+    if (!touchMove.active || e.pointerId !== touchMove.pointerId) {
+      return
+    }
+    e.preventDefault()
+    updateTouchMove(e)
+  })
+  for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    elMoveZone?.addEventListener(eventName, (e) => {
+      if (e instanceof PointerEvent && e.pointerId !== touchMove.pointerId) {
+        return
       }
-    })
-    button.addEventListener('pointercancel', () => {
-      setTouchKey(button, false)
-    })
-    button.addEventListener('lostpointercapture', () => {
-      setTouchKey(button, false)
-    })
-    button.addEventListener('contextmenu', (e) => {
-      e.preventDefault()
+      resetTouchControls()
     })
   }
-  window.addEventListener('blur', () => {
-    for (const button of touchButtons) {
-      setTouchKey(button, false)
+  elJumpZone?.addEventListener('pointerdown', (e) => {
+    e.preventDefault()
+    if (!gameOver) {
+      touchJumpQueued = true
     }
   })
+  elJumpZone?.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+  })
+  elMoveZone?.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+  })
+  window.addEventListener('blur', resetTouchControls)
 
   let last = performance.now() / 1000
 
@@ -1158,9 +1195,7 @@ function main() {
       c.userData.picked = false
       c.visible = true
     }
-    for (const button of touchButtons) {
-      setTouchKey(button, false)
-    }
+    resetTouchControls()
     for (const code of Object.keys(keys)) {
       keys[code] = false
     }
@@ -1204,24 +1239,25 @@ function main() {
     const kLeft = keys['ArrowLeft'] || keys['KeyA']
     const kRight = keys['ArrowRight'] || keys['KeyD']
 
-    if (!gameOver && kLeft) {
-      playerFacing += TURN_SPD * dt
-    }
-    if (!gameOver && kRight) {
-      playerFacing -= TURN_SPD * dt
+    const turnInput = (kLeft ? 1 : 0) - (kRight ? 1 : 0) - touchMove.x
+    if (!gameOver && turnInput !== 0) {
+      playerFacing += THREE.MathUtils.clamp(turnInput, -1, 1) * TURN_SPD * dt
     }
 
     const forwardX = Math.sin(playerFacing)
     const forwardZ = Math.cos(playerFacing)
-    const thrust = gameOver ? 0 : (kUp ? 1 : 0) - (kDown ? 1 : 0)
+    const touchThrust = -touchMove.y
+    const thrust = gameOver ? 0 : THREE.MathUtils.clamp((kUp ? 1 : 0) - (kDown ? 1 : 0) + touchThrust, -1, 1)
     const boost = 1 + energy * 0.0008
     pVel.x = forwardX * thrust * MOVE * dt * boost
     pVel.z = forwardZ * thrust * MOVE * dt * boost
     pVel.y -= GRAVITY * dt
-    if (!gameOver && onGround && keys['Space']) {
+    const jumpPressed = keys['Space'] || touchJumpQueued
+    if (!gameOver && onGround && jumpPressed) {
       pVel.y = JUMP_V
       onGround = false
     }
+    touchJumpQueued = false
     let nx = siggeG.position.x + pVel.x
     let ny = Math.max(0, siggeG.position.y + pVel.y * dt)
     let nz = siggeG.position.z + pVel.z

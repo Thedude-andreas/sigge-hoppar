@@ -111,15 +111,9 @@ canvas {
 
 #touch-controls {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 3;
   display: none;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.1rem calc(1rem + env(safe-area-inset-bottom));
   pointer-events: none;
 }
 
@@ -174,62 +168,23 @@ canvas {
   transform: translateY(1px);
 }
 
-.touch-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 54px);
-  grid-template-rows: repeat(2, 54px);
-  gap: 8px;
-  pointer-events: auto;
-}
-
-.touch-btn {
-  width: 54px;
-  height: 54px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 8px;
-  background: rgba(12, 28, 16, 0.62);
-  color: #f6f1d6;
-  font: 800 1.15rem/1 'Segoe UI', system-ui, sans-serif;
-  text-shadow: 0 1px 2px #000;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  -webkit-tap-highlight-color: transparent;
+.touch-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   touch-action: none;
-}
-
-.touch-btn:active,
-.touch-btn.is-pressed {
-  background: rgba(219, 174, 62, 0.76);
-  color: #1a1206;
-  text-shadow: none;
-  transform: translateY(1px);
-}
-
-.touch-btn--up {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.touch-btn--left {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.touch-btn--down {
-  grid-column: 2;
-  grid-row: 2;
-}
-
-.touch-btn--right {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.touch-btn--jump {
-  width: 78px;
-  height: 78px;
-  border-radius: 50%;
-  font-size: 0.95rem;
   pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#jump-zone {
+  left: 0;
+  width: 44%;
+}
+
+#move-zone {
+  right: 0;
+  width: 56%;
 }
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
@@ -247,19 +202,11 @@ canvas {
 }
 
 @media (max-width: 380px), (max-height: 540px) {
-  .touch-pad {
-    grid-template-columns: repeat(3, 48px);
-    grid-template-rows: repeat(2, 48px);
-    gap: 7px;
+  #jump-zone {
+    width: 42%;
   }
 
-  .touch-btn {
-    width: 48px;
-    height: 48px;
-  }
-
-  .touch-btn--jump {
-    width: 68px;
-    height: 68px;
+  #move-zone {
+    width: 58%;
   }
 }
