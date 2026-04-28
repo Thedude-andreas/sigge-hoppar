@@ -1402,7 +1402,7 @@ function main() {
       const cameraRightX = Math.cos(cameraYaw)
       const cameraRightZ = -Math.sin(cameraYaw)
       const forwardInput = -touchMove.y
-      const sideInput = touchMove.x
+      const sideInput = -touchMove.x
       moveX = cameraForwardX * forwardInput + cameraRightX * sideInput
       moveZ = cameraForwardZ * forwardInput + cameraRightZ * sideInput
       moveAmount = Math.min(1, Math.hypot(moveX, moveZ))
