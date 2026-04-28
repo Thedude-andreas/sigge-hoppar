@@ -25,8 +25,13 @@
         <p id="hud-gameover" class="hud-gameover--hidden">Game over</p>
       </div>
       <div id="touch-controls" aria-label="Spelkontroller">
-        <div id="jump-zone" class="touch-zone" aria-label="Hoppa"></div>
-        <div id="move-zone" class="touch-zone" aria-label="Rörelse"></div>
+        <div id="move-zone" class="touch-zone" aria-label="Rörelse">
+          <div id="move-stick" aria-hidden="true">
+            <div id="move-knob"></div>
+          </div>
+        </div>
+        <div id="camera-zone" class="touch-zone" aria-label="Kamera"></div>
+        <button id="jump-zone" class="touch-zone" type="button" aria-label="Hoppa">↑</button>
       </div>
       <div id="start-screen" class="mobile-overlay mobile-overlay--hidden">
         <div class="mobile-panel">

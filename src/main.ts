@@ -798,7 +798,10 @@ function main() {
   const elGameOverDialog = document.getElementById('gameover-dialog') as HTMLDivElement | null
   const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
   const elMoveZone = document.getElementById('move-zone') as HTMLDivElement | null
-  const elJumpZone = document.getElementById('jump-zone') as HTMLDivElement | null
+  const elMoveStick = document.getElementById('move-stick') as HTMLDivElement | null
+  const elMoveKnob = document.getElementById('move-knob') as HTMLDivElement | null
+  const elCameraZone = document.getElementById('camera-zone') as HTMLDivElement | null
+  const elJumpZone = document.getElementById('jump-zone') as HTMLButtonElement | null
   const elStartScreen = document.getElementById('start-screen') as HTMLDivElement | null
   const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
   const elStartFullscreen = document.getElementById('start-fullscreen') as HTMLButtonElement | null
@@ -821,14 +824,25 @@ function main() {
     pointerId: -1,
     startX: 0,
     startY: 0,
+    baseX: 0,
+    baseY: 0,
+    radius: 64,
     x: 0,
     y: 0,
+  }
+  const touchCamera = {
+    active: false,
+    pointerId: -1,
+    lastX: 0,
+    lastY: 0,
   }
   let touchJumpQueued = false
   const pVel = new THREE.Vector3(0, 0, 0)
   const foxP = new THREE.Vector3(0, 0, 12)
   /** Var Sigge tittar (Y-rotation) — kameran följer bakifrån. */
   let playerFacing = 0
+  let cameraYaw = 0
+  let cameraPitch = 0.18
   let hopPhase = 0
   const TURN_SPD = 2.2
   let energy = START_ENERGY
@@ -1147,31 +1161,78 @@ function main() {
   })
 
   function resetTouchControls() {
+    resetTouchMove()
+    resetTouchCamera()
+    touchJumpQueued = false
+    elJumpZone?.classList.remove('touch-zone--active')
+  }
+
+  function resetTouchCamera() {
+    touchCamera.active = false
+    touchCamera.pointerId = -1
+  }
+
+  function resetTouchMove() {
     touchMove.active = false
     touchMove.pointerId = -1
     touchMove.x = 0
     touchMove.y = 0
-    touchJumpQueued = false
+    elMoveZone?.classList.remove('touch-zone--active')
+    if (elMoveStick) {
+      elMoveStick.style.left = ''
+      elMoveStick.style.top = ''
+      elMoveStick.style.bottom = ''
+    }
+    if (elMoveKnob) {
+      elMoveKnob.style.transform = ''
+    }
   }
 
   function updateTouchMove(e: PointerEvent) {
-    const maxMove = Math.max(36, Math.min(window.innerWidth, window.innerHeight) * 0.16)
-    const dx = THREE.MathUtils.clamp((e.clientX - touchMove.startX) / maxMove, -1, 1)
-    const dy = THREE.MathUtils.clamp((e.clientY - touchMove.startY) / maxMove, -1, 1)
+    const rawX = e.clientX - touchMove.baseX
+    const rawY = e.clientY - touchMove.baseY
+    const len = Math.hypot(rawX, rawY)
+    const scale = len > touchMove.radius ? touchMove.radius / len : 1
+    const knobX = rawX * scale
+    const knobY = rawY * scale
+    const dx = THREE.MathUtils.clamp(knobX / touchMove.radius, -1, 1)
+    const dy = THREE.MathUtils.clamp(knobY / touchMove.radius, -1, 1)
     const dead = 0.12
     touchMove.x = Math.abs(dx) < dead ? 0 : dx
     touchMove.y = Math.abs(dy) < dead ? 0 : dy
+    if (elMoveKnob) {
+      elMoveKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`
+    }
   }
 
   elMoveZone?.addEventListener('pointerdown', (e) => {
     e.preventDefault()
+    if (touchMove.active) {
+      return
+    }
+    const zoneRect = elMoveZone.getBoundingClientRect()
+    const stickSize = elMoveStick?.getBoundingClientRect().width ?? Math.max(108, Math.min(window.innerWidth, window.innerHeight) * 0.18)
+    const radius = stickSize * 0.34
+    const margin = stickSize * 0.5
+    const baseX = THREE.MathUtils.clamp(e.clientX, zoneRect.left + margin, zoneRect.right - margin)
+    const baseY = THREE.MathUtils.clamp(e.clientY, zoneRect.top + margin, zoneRect.bottom - margin)
     touchMove.active = true
     touchMove.pointerId = e.pointerId
     touchMove.startX = e.clientX
     touchMove.startY = e.clientY
+    touchMove.baseX = baseX
+    touchMove.baseY = baseY
+    touchMove.radius = radius
     touchMove.x = 0
     touchMove.y = 0
+    elMoveZone.classList.add('touch-zone--active')
+    if (elMoveStick) {
+      elMoveStick.style.left = `${baseX}px`
+      elMoveStick.style.top = `${baseY}px`
+      elMoveStick.style.bottom = 'auto'
+    }
     elMoveZone.setPointerCapture(e.pointerId)
+    updateTouchMove(e)
   })
   elMoveZone?.addEventListener('pointermove', (e) => {
     if (!touchMove.active || e.pointerId !== touchMove.pointerId) {
@@ -1185,15 +1246,52 @@ function main() {
       if (e instanceof PointerEvent && e.pointerId !== touchMove.pointerId) {
         return
       }
-      resetTouchControls()
+      resetTouchMove()
+    })
+  }
+  elCameraZone?.addEventListener('pointerdown', (e) => {
+    e.preventDefault()
+    if (touchCamera.active) {
+      return
+    }
+    touchCamera.active = true
+    touchCamera.pointerId = e.pointerId
+    touchCamera.lastX = e.clientX
+    touchCamera.lastY = e.clientY
+    elCameraZone.setPointerCapture(e.pointerId)
+  })
+  elCameraZone?.addEventListener('pointermove', (e) => {
+    if (!touchCamera.active || e.pointerId !== touchCamera.pointerId) {
+      return
+    }
+    e.preventDefault()
+    const dx = e.clientX - touchCamera.lastX
+    const dy = e.clientY - touchCamera.lastY
+    touchCamera.lastX = e.clientX
+    touchCamera.lastY = e.clientY
+    cameraYaw -= dx * 0.008
+    cameraPitch = THREE.MathUtils.clamp(cameraPitch + dy * 0.0045, -0.22, 0.68)
+  })
+  for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    elCameraZone?.addEventListener(eventName, (e) => {
+      if (e instanceof PointerEvent && e.pointerId !== touchCamera.pointerId) {
+        return
+      }
+      resetTouchCamera()
     })
   }
   elJumpZone?.addEventListener('pointerdown', (e) => {
     e.preventDefault()
+    elJumpZone.classList.add('touch-zone--active')
     if (!gameOver) {
       touchJumpQueued = true
     }
   })
+  for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    elJumpZone?.addEventListener(eventName, () => {
+      elJumpZone.classList.remove('touch-zone--active')
+    })
+  }
   elJumpZone?.addEventListener('contextmenu', (e) => {
     e.preventDefault()
   })
@@ -1226,6 +1324,8 @@ function main() {
     gameOver = false
     onGround = true
     playerFacing = 0
+    cameraYaw = 0
+    cameraPitch = 0.18
     hopPhase = 0
     foxMode = 'hidden'
     foxNext = 5
@@ -1291,18 +1391,43 @@ function main() {
     const kLeft = keys['ArrowLeft'] || keys['KeyA']
     const kRight = keys['ArrowRight'] || keys['KeyD']
 
-    const turnInput = (kLeft ? 1 : 0) - (kRight ? 1 : 0) - touchMove.x
-    if (!gameOver && turnInput !== 0) {
-      playerFacing += THREE.MathUtils.clamp(turnInput, -1, 1) * TURN_SPD * dt
+    const mobileMoving = touchMove.active && (touchMove.x !== 0 || touchMove.y !== 0)
+    let moveX = 0
+    let moveZ = 0
+    let moveAmount = 0
+
+    if (mobileMoving) {
+      const cameraForwardX = Math.sin(cameraYaw)
+      const cameraForwardZ = Math.cos(cameraYaw)
+      const cameraRightX = Math.cos(cameraYaw)
+      const cameraRightZ = -Math.sin(cameraYaw)
+      const forwardInput = -touchMove.y
+      const sideInput = touchMove.x
+      moveX = cameraForwardX * forwardInput + cameraRightX * sideInput
+      moveZ = cameraForwardZ * forwardInput + cameraRightZ * sideInput
+      moveAmount = Math.min(1, Math.hypot(moveX, moveZ))
+      if (moveAmount > 0) {
+        moveX /= moveAmount
+        moveZ /= moveAmount
+        playerFacing = Math.atan2(moveX, moveZ)
+      }
+    } else {
+      const turnInput = (kLeft ? 1 : 0) - (kRight ? 1 : 0)
+      if (!gameOver && turnInput !== 0) {
+        playerFacing += THREE.MathUtils.clamp(turnInput, -1, 1) * TURN_SPD * dt
+      }
+      moveX = Math.sin(playerFacing)
+      moveZ = Math.cos(playerFacing)
+      moveAmount = THREE.MathUtils.clamp((kUp ? 1 : 0) - (kDown ? 1 : 0), -1, 1)
+      if (!isMobileLike()) {
+        cameraYaw = playerFacing
+      }
     }
 
-    const forwardX = Math.sin(playerFacing)
-    const forwardZ = Math.cos(playerFacing)
-    const touchThrust = -touchMove.y
-    const thrust = gameOver ? 0 : THREE.MathUtils.clamp((kUp ? 1 : 0) - (kDown ? 1 : 0) + touchThrust, -1, 1)
     const boost = 1 + energy * 0.0008
-    pVel.x = forwardX * thrust * MOVE * dt * boost
-    pVel.z = forwardZ * thrust * MOVE * dt * boost
+    const speed = gameOver ? 0 : moveAmount * MOVE * dt * boost
+    pVel.x = moveX * speed
+    pVel.z = moveZ * speed
     pVel.y -= GRAVITY * dt
     const jumpPressed = keys['Space'] || touchJumpQueued
     if (!gameOver && onGround && jumpPressed) {
@@ -1350,7 +1475,7 @@ function main() {
     siggeG.rotation.y = playerFacing
 
     // Skuttbounce i kroppen när man går fram/bak; kollaps när man stannar
-    const strolling = onGround && Math.abs(thrust) > 0
+    const strolling = onGround && Math.abs(moveAmount) > 0.01
     if (strolling) {
       hopPhase += dt * 11.5
       siggeVisual.position.y = 0.1 * (0.5 - 0.5 * Math.cos(hopPhase * 2.6))
@@ -1423,14 +1548,15 @@ function main() {
     }
     animateFox(foxMoving, foxSniffing, dt, now)
 
-    // Kamera: bakom Sigge längs hans blickriktning
-    const f = new THREE.Vector3(forwardX, 0, forwardZ)
+    // Kamera: följer bakom Sigge, men kan vridas fritt på mobil.
+    const f = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))
     const back = f.clone().multiplyScalar(-1)
     const dist = 4.35
+    const horizontalDist = Math.cos(cameraPitch) * dist
     const camP = new THREE.Vector3(
-      siggeG.position.x + back.x * dist,
-      siggeG.position.y + 1.15,
-      siggeG.position.z + back.z * dist,
+      siggeG.position.x + back.x * horizontalDist,
+      siggeG.position.y + 1.15 + Math.sin(cameraPitch) * dist,
+      siggeG.position.z + back.z * horizontalDist,
     )
     camera.position.lerp(camP, 0.18)
     camera.lookAt(
