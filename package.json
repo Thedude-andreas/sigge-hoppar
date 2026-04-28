@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "build:amc": "npm run build && rm -rf ../AMC/public/sigge-hoppar && mkdir -p ../AMC/public/sigge-hoppar && cp -r dist/* ../AMC/public/sigge-hoppar/"
+    "build:amc": "npm run build && find dist -type d -exec chmod 755 {} + && find dist -type f -exec chmod 644 {} + && rm -rf ../AMC/public/sigge-hoppar && mkdir -p ../AMC/public/sigge-hoppar && cp -R dist/. ../AMC/public/sigge-hoppar/ && find ../AMC/public/sigge-hoppar -type d -exec chmod 755 {} + && find ../AMC/public/sigge-hoppar -type f -exec chmod 644 {} +"
   },
   "dependencies": {
     "three": "^0.175.0"
