@@ -20,6 +20,7 @@
           <span>Nätter: <strong id="night-count">0</strong></span>
           <span id="cycle-state">Gryning</span>
           <span id="item-status">Rustning 0/4</span>
+          <span id="player-count">Spelare: 0</span>
         </div>
         <div id="energy-wrap">
           <span>Energi (morötter)</span>
@@ -29,6 +30,8 @@
         <p id="hud-fox" class="hud-fox--hidden">Räv eller katt! Spring till kaninburen…</p>
         <p id="hud-safe" class="hud-safe--hidden">Trygg i buren</p>
         <p id="hud-gameover" class="hud-gameover--hidden">Game over</p>
+        <p id="hud-network">Inte ansluten</p>
+        <div id="hud-notices"></div>
       </div>
       <div id="touch-controls" aria-label="Spelkontroller">
         <div id="move-zone" class="touch-zone" aria-label="Rörelse">
@@ -42,7 +45,17 @@
       <div id="start-screen" class="mobile-overlay mobile-overlay--hidden">
         <div class="mobile-panel">
           <p class="mobile-panel-title">99 nätter på kronan</p>
-          <p>Överlev så många nätter som möjligt.</p>
+          <label class="setup-label" for="player-alias">Alias</label>
+          <input id="player-alias" maxlength="18" autocomplete="nickname" value="Sigge" />
+          <p class="setup-label">Färg</p>
+          <div id="color-picker" aria-label="Välj färg">
+            <button class="color-swatch color-swatch--selected" type="button" data-color="#f0d08b" style="--swatch: #f0d08b" aria-label="Sand"></button>
+            <button class="color-swatch" type="button" data-color="#d66b50" style="--swatch: #d66b50" aria-label="Röd"></button>
+            <button class="color-swatch" type="button" data-color="#6bbf70" style="--swatch: #6bbf70" aria-label="Grön"></button>
+            <button class="color-swatch" type="button" data-color="#5da4d9" style="--swatch: #5da4d9" aria-label="Blå"></button>
+            <button class="color-swatch" type="button" data-color="#b887ff" style="--swatch: #b887ff" aria-label="Lila"></button>
+          </div>
+          <p id="start-status">Ansluter till lokal multiplayer-server.</p>
           <button id="start-fullscreen" type="button">Starta spelet</button>
         </div>
       </div>

@@ -81,6 +81,80 @@ type Pickup = {
   kind: PickupKind
   ttl: number
 }
+type SiggeAvatar = {
+  root: THREE.Group
+  visual: THREE.Group
+  armor: THREE.Group
+  label?: THREE.Sprite
+}
+type PlayerSnapshot = {
+  id: string
+  alias: string
+  color: string
+  x: number
+  y: number
+  z: number
+  facing: number
+  energy: number
+  armorCharges: number
+  shieldPotionLeft: number
+  speedPotionLeft: number
+  gameOver: boolean
+  onGround: boolean
+  moving: boolean
+}
+type CarrotSnapshot = {
+  picked: boolean
+  growth: number
+}
+type PickupSnapshot = {
+  id: string
+  kind: PickupKind
+  x: number
+  y: number
+  z: number
+  ttl: number
+}
+type PredatorSnapshot = {
+  mode: FoxMode
+  x: number
+  y: number
+  z: number
+  rotation: number
+  moving: boolean
+  sniffing: boolean
+  biteAnimLeft: number
+}
+type MultiplayerSnapshot = {
+  type: 'snapshot'
+  serverTime: number
+  world: {
+    cycleClock: number
+    survivedNights: number
+  }
+  players: PlayerSnapshot[]
+  carrots: CarrotSnapshot[]
+  pickups: PickupSnapshot[]
+  predators: {
+    fox: PredatorSnapshot
+    cat: PredatorSnapshot
+  }
+}
+type RemoteAvatar = SiggeAvatar & {
+  target: THREE.Vector3
+  targetFacing: number
+  hopPhase: number
+}
+type MultiplayerNotice = {
+  type: 'notice'
+  kind: 'join' | 'leave'
+  alias: string
+}
+type MultiplayerPickupMessage = {
+  type: 'pickup'
+  kind: PickupKind
+  label: string
+}
 
 declare global {
   interface Window {
@@ -175,10 +249,20 @@ function makeFurTexture() {
   return tex
 }
 
-function makeSiggeMaterial() {
+function avatarColorHex(color: string | number = 0xf0d08b): number {
+  if (typeof color === 'number') {
+    return color
+  }
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) {
+    return Number.parseInt(color.slice(1), 16)
+  }
+  return 0xf0d08b
+}
+
+function makeSiggeMaterial(color: string | number = 0xf0d08b) {
   const fur = makeFurTexture()
   return new THREE.MeshStandardMaterial({
-    color: 0xf0d08b,
+    color: avatarColorHex(color),
     map: fur,
     emissive: 0x3d2508,
     emissiveIntensity: 0.12,
@@ -193,6 +277,134 @@ function makeSiggeTail(material: THREE.Material) {
   tail.scale.set(1.05, 0.8, 0.88)
   tail.position.set(0, 0.29, -0.5)
   return tail
+}
+
+function makePlayerLabel(alias: string, color: string): THREE.Sprite {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')!
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = 'rgba(4, 12, 6, 0.76)'
+  ctx.strokeStyle = color
+  ctx.lineWidth = 5
+  ctx.roundRect(18, 20, 476, 78, 18)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = '#f7efd4'
+  ctx.font = '700 42px Segoe UI, system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(alias.slice(0, 18), 256, 60, 430)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    fog: false,
+  })
+  const sprite = new THREE.Sprite(material)
+  sprite.position.set(0, 1.04, 0)
+  sprite.scale.set(1.75, 0.44, 1)
+  sprite.renderOrder = 10
+  return sprite
+}
+
+function setAvatarLabel(avatar: SiggeAvatar, alias: string, color: string) {
+  if (avatar.label) {
+    const material = avatar.label.material as THREE.SpriteMaterial
+    material.map?.dispose()
+    material.dispose()
+    avatar.root.remove(avatar.label)
+  }
+  avatar.label = makePlayerLabel(alias, color)
+  avatar.root.add(avatar.label)
+}
+
+function createSiggeAvatar(color: string | number = 0xf0d08b): SiggeAvatar {
+  const root = new THREE.Group()
+  const visual = new THREE.Group()
+  const siggeMat = makeSiggeMaterial(color)
+  siggeMat.userData.siggeFur = true
+  const innerEarMat = new THREE.MeshStandardMaterial({
+    color: 0xc99875,
+    roughness: 0.9,
+    fog: false,
+  })
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1b130c, fog: false })
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0x8a5c45, roughness: 0.8, fog: false })
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.43, 28, 20),
+    siggeMat,
+  )
+  body.scale.set(1.05, 0.78, 1.28)
+  body.position.y = 0.32
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), siggeMat)
+  chest.scale.set(1.15, 0.9, 0.75)
+  chest.position.set(0, 0.39, 0.28)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 22, 16), siggeMat)
+  head.scale.set(1.08, 0.9, 1.02)
+  head.position.set(0, 0.56, 0.38)
+
+  const leftEar = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), siggeMat)
+  leftEar.scale.set(0.62, 2.15, 0.38)
+  leftEar.rotation.set(0.16, 0.06, -0.28)
+  leftEar.position.set(-0.31, 0.42, 0.2)
+  const rightEar = leftEar.clone()
+  rightEar.rotation.set(0.16, -0.06, 0.28)
+  rightEar.position.x = 0.31
+
+  const leftInnerEar = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 8), innerEarMat)
+  leftInnerEar.scale.set(0.48, 1.65, 0.13)
+  leftInnerEar.rotation.copy(leftEar.rotation)
+  leftInnerEar.position.set(-0.315, 0.4, 0.245)
+  const rightInnerEar = leftInnerEar.clone()
+  rightInnerEar.rotation.copy(rightEar.rotation)
+  rightInnerEar.position.x = 0.235
+
+  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), eyeMat)
+  leftEye.position.set(-0.105, 0.6, 0.62)
+  const rightEye = leftEye.clone()
+  rightEye.position.x = 0.105
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), noseMat)
+  nose.scale.set(1.1, 0.75, 0.75)
+  nose.position.set(0, 0.535, 0.655)
+
+  const siggeTail = makeSiggeTail(siggeMat)
+  const armor = new THREE.Group()
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0xa8b6c6, metalness: 0.45, roughness: 0.34, fog: false })
+  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.055, 0.66), armorMat)
+  backPlate.position.set(0, 0.61, -0.03)
+  backPlate.rotation.x = -0.08
+  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.24), armorMat)
+  chestPlate.position.set(0, 0.49, 0.34)
+  chestPlate.rotation.x = 0.18
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.23), armorMat)
+  helm.position.set(0, 0.73, 0.43)
+  armor.add(backPlate, chestPlate, helm)
+  armor.visible = false
+  visual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail, armor)
+  visual.scale.setScalar(SIGGE_SCALE)
+  root.add(visual)
+  root.position.set(0, PLAYER_H, 0)
+
+  return { root, visual, armor }
+}
+
+function setAvatarColor(avatar: SiggeAvatar, color: string) {
+  avatar.root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) {
+      return
+    }
+    const materials = Array.isArray(object.material) ? object.material : [object.material]
+    for (const material of materials) {
+      if (material instanceof THREE.MeshStandardMaterial && material.userData.siggeFur) {
+        material.color.set(avatarColorHex(color))
+      }
+    }
+  })
 }
 
 function buildScene() {
@@ -722,71 +934,8 @@ function buildScene() {
   ))
 
   // Sigge: root = logik, visual = kropp (skuttar ovanpå)
-  const siggeG = new THREE.Group()
-  const siggeVisual = new THREE.Group()
-  const siggeMat = makeSiggeMaterial()
-  const innerEarMat = new THREE.MeshStandardMaterial({
-    color: 0xc99875,
-    roughness: 0.9,
-    fog: false,
-  })
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1b130c, fog: false })
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0x8a5c45, roughness: 0.8, fog: false })
-  const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.43, 28, 20),
-    siggeMat,
-  )
-  body.scale.set(1.05, 0.78, 1.28)
-  body.position.y = 0.32
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), siggeMat)
-  chest.scale.set(1.15, 0.9, 0.75)
-  chest.position.set(0, 0.39, 0.28)
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 22, 16), siggeMat)
-  head.scale.set(1.08, 0.9, 1.02)
-  head.position.set(0, 0.56, 0.38)
-
-  const leftEar = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), siggeMat)
-  leftEar.scale.set(0.62, 2.15, 0.38)
-  leftEar.rotation.set(0.16, 0.06, -0.28)
-  leftEar.position.set(-0.31, 0.42, 0.2)
-  const rightEar = leftEar.clone()
-  rightEar.rotation.set(0.16, -0.06, 0.28)
-  rightEar.position.x = 0.31
-
-  const leftInnerEar = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 8), innerEarMat)
-  leftInnerEar.scale.set(0.48, 1.65, 0.13)
-  leftInnerEar.rotation.copy(leftEar.rotation)
-  leftInnerEar.position.set(-0.315, 0.4, 0.245)
-  const rightInnerEar = leftInnerEar.clone()
-  rightInnerEar.rotation.copy(rightEar.rotation)
-  rightInnerEar.position.x = 0.235
-
-  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), eyeMat)
-  leftEye.position.set(-0.105, 0.6, 0.62)
-  const rightEye = leftEye.clone()
-  rightEye.position.x = 0.105
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), noseMat)
-  nose.scale.set(1.1, 0.75, 0.75)
-  nose.position.set(0, 0.535, 0.655)
-
-  const siggeTail = makeSiggeTail(siggeMat)
-  const siggeArmor = new THREE.Group()
-  const armorMat = new THREE.MeshStandardMaterial({ color: 0xa8b6c6, metalness: 0.45, roughness: 0.34, fog: false })
-  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.055, 0.66), armorMat)
-  backPlate.position.set(0, 0.61, -0.03)
-  backPlate.rotation.x = -0.08
-  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.24), armorMat)
-  chestPlate.position.set(0, 0.49, 0.34)
-  chestPlate.rotation.x = 0.18
-  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.23), armorMat)
-  helm.position.set(0, 0.73, 0.43)
-  siggeArmor.add(backPlate, chestPlate, helm)
-  siggeArmor.visible = false
-  siggeVisual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail, siggeArmor)
-  siggeVisual.scale.setScalar(SIGGE_SCALE)
-  siggeG.add(siggeVisual)
-  siggeG.position.set(0, PLAYER_H, 0)
-  scene.add(siggeG)
+  const sigge = createSiggeAvatar()
+  scene.add(sigge.root)
 
   // Fox
   const foxG = new THREE.Group()
@@ -1011,9 +1160,9 @@ function buildScene() {
 
   return {
     scene,
-    siggeG,
-    siggeVisual,
-    siggeArmor,
+    siggeG: sigge.root,
+    siggeVisual: sigge.visual,
+    siggeArmor: sigge.armor,
     foxG,
     catG,
     carrots,
@@ -1039,10 +1188,13 @@ function main() {
   const elNightCount = document.getElementById('night-count') as HTMLSpanElement | null
   const elCycle = document.getElementById('cycle-state') as HTMLSpanElement | null
   const elItems = document.getElementById('item-status') as HTMLSpanElement | null
+  const elPlayerCount = document.getElementById('player-count') as HTMLSpanElement | null
   const elPickup = document.getElementById('hud-pickup') as HTMLParagraphElement | null
   const elFox = document.getElementById('hud-fox') as HTMLParagraphElement | null
   const elSafe = document.getElementById('hud-safe') as HTMLParagraphElement | null
   const elGameOver = document.getElementById('hud-gameover') as HTMLParagraphElement | null
+  const elNetwork = document.getElementById('hud-network') as HTMLParagraphElement | null
+  const elNotices = document.getElementById('hud-notices') as HTMLDivElement | null
   const elGameOverDialog = document.getElementById('gameover-dialog') as HTMLDivElement | null
   const elGameOverDetail = document.getElementById('gameover-detail') as HTMLParagraphElement | null
   const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
@@ -1054,6 +1206,9 @@ function main() {
   const elStartScreen = document.getElementById('start-screen') as HTMLDivElement | null
   const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
   const elStartFullscreen = document.getElementById('start-fullscreen') as HTMLButtonElement | null
+  const elAlias = document.getElementById('player-alias') as HTMLInputElement | null
+  const elColorPicker = document.getElementById('color-picker') as HTMLDivElement | null
+  const elStartStatus = document.getElementById('start-status') as HTMLParagraphElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
@@ -1079,6 +1234,11 @@ function main() {
     rampSpec,
     hutchSpec,
   } = buildScene()
+  const localAvatar: SiggeAvatar = {
+    root: siggeG,
+    visual: siggeVisual,
+    armor: siggeArmor,
+  }
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200)
   const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -1151,6 +1311,403 @@ function main() {
   const fogDay = new THREE.Color(0x8ec8e0)
   const fogTwilight = new THREE.Color(0xf0a178)
   const fogNight = new THREE.Color(0x090d1a)
+  const remoteAvatars = new Map<string, RemoteAvatar>()
+  const networkPickups = new Map<string, THREE.Group>()
+  let selectedColor = '#f0d08b'
+  let selectedAlias = 'Sigge'
+  let socket: WebSocket | null = null
+  let localPlayerId = ''
+  let latestSnapshot: MultiplayerSnapshot | null = null
+  let multiplayerConnected = false
+  let startPending = false
+  let inputSeq = 0
+
+  for (const swatch of elColorPicker?.querySelectorAll<HTMLButtonElement>('.color-swatch') ?? []) {
+    swatch.addEventListener('click', () => {
+      selectedColor = swatch.dataset.color ?? selectedColor
+      for (const other of elColorPicker?.querySelectorAll<HTMLButtonElement>('.color-swatch') ?? []) {
+        other.classList.toggle('color-swatch--selected', other === swatch)
+      }
+    })
+  }
+
+  function multiplayerSessionStarted(): boolean {
+    return localPlayerId !== ''
+  }
+
+  function multiplayerUrl(): string {
+    const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
+    if (env?.VITE_SIGGE_WS_URL) {
+      return env.VITE_SIGGE_WS_URL
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.hostname || 'localhost'
+    return `${protocol}//${host}:8787`
+  }
+
+  function setNetworkStatus(text: string) {
+    if (elNetwork) {
+      elNetwork.textContent = text
+    }
+  }
+
+  function showNotice(text: string) {
+    if (!elNotices) {
+      return
+    }
+    const notice = document.createElement('div')
+    notice.className = 'hud-notice'
+    notice.textContent = text
+    elNotices.appendChild(notice)
+    window.setTimeout(() => {
+      notice.remove()
+    }, 3200)
+  }
+
+  function sanitizeLocalAlias(): string {
+    const alias = elAlias?.value.trim().slice(0, 18) || 'Sigge'
+    if (elAlias) {
+      elAlias.value = alias
+    }
+    return alias
+  }
+
+  function handleMultiplayerMessage(raw: string) {
+    const message = JSON.parse(raw) as { type?: string; [key: string]: unknown }
+    if (message.type === 'snapshot') {
+      latestSnapshot = message as MultiplayerSnapshot
+      return
+    }
+    if (message.type === 'notice') {
+      const notice = message as MultiplayerNotice
+      showNotice(`${notice.alias} ${notice.kind === 'join' ? 'joinade' : 'lämnade'}`)
+      return
+    }
+    if (message.type === 'pickup') {
+      const pickup = message as MultiplayerPickupMessage
+      if (elPickup) {
+        elPickup.textContent = `${pickup.label} plockad`
+        elPickup.classList.remove('hud-pickup--hidden')
+        pickupMessageLeft = 2.4
+      }
+    }
+  }
+
+  function connectMultiplayer(alias: string, color: string): Promise<void> {
+    socket?.close()
+    latestSnapshot = null
+    multiplayerConnected = false
+    localPlayerId = ''
+    setNetworkStatus('Ansluter...')
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(multiplayerUrl())
+      socket = ws
+      let settled = false
+      const timeout = window.setTimeout(() => {
+        if (settled) {
+          return
+        }
+        settled = true
+        ws.close()
+        reject(new Error('Servern svarade inte.'))
+      }, 4500)
+
+      ws.addEventListener('open', () => {
+        ws.send(JSON.stringify({ type: 'hello', alias, color }))
+      })
+
+      ws.addEventListener('message', (event) => {
+        const raw = typeof event.data === 'string' ? event.data : ''
+        if (!raw) {
+          return
+        }
+        const message = JSON.parse(raw) as { type?: string; id?: unknown }
+        if (message.type === 'welcome' && typeof message.id === 'string') {
+          localPlayerId = message.id
+          multiplayerConnected = true
+          window.clearTimeout(timeout)
+          setNetworkStatus('Ansluten')
+          if (!settled) {
+            settled = true
+            resolve()
+          }
+          return
+        }
+        handleMultiplayerMessage(raw)
+      })
+
+      ws.addEventListener('close', () => {
+        multiplayerConnected = false
+        setNetworkStatus('Anslutningen bröts')
+        if (!settled) {
+          settled = true
+          window.clearTimeout(timeout)
+          reject(new Error(`Kunde inte ansluta till ${multiplayerUrl()}.`))
+        } else if (titleStarted) {
+          showNotice('Anslutningen till servern bröts')
+        }
+      })
+
+      ws.addEventListener('error', () => {
+        if (!settled) {
+          setNetworkStatus('Servern kunde inte nås')
+        }
+      })
+    })
+  }
+
+  function sendCurrentInput() {
+    if (!socket || socket.readyState !== WebSocket.OPEN || !multiplayerConnected) {
+      touchJumpQueued = false
+      return
+    }
+
+    const kUp = keys['ArrowUp'] || keys['KeyW']
+    const kDown = keys['ArrowDown'] || keys['KeyS']
+    const kLeft = keys['ArrowLeft'] || keys['KeyA']
+    const kRight = keys['ArrowRight'] || keys['KeyD']
+    const mobileMoving = touchMove.active && (touchMove.x !== 0 || touchMove.y !== 0)
+    let moveX = 0
+    let moveZ = 0
+    let moveAmount = 0
+    let turnInput = 0
+
+    if (mobileMoving) {
+      const cameraForwardX = Math.sin(cameraYaw)
+      const cameraForwardZ = Math.cos(cameraYaw)
+      const cameraRightX = Math.cos(cameraYaw)
+      const cameraRightZ = -Math.sin(cameraYaw)
+      const forwardInput = -touchMove.y
+      const sideInput = -touchMove.x
+      moveX = cameraForwardX * forwardInput + cameraRightX * sideInput
+      moveZ = cameraForwardZ * forwardInput + cameraRightZ * sideInput
+      moveAmount = Math.min(1, Math.hypot(moveX, moveZ))
+      if (moveAmount > 0) {
+        moveX /= moveAmount
+        moveZ /= moveAmount
+      }
+    } else {
+      turnInput = (kLeft ? 1 : 0) - (kRight ? 1 : 0)
+      moveAmount = THREE.MathUtils.clamp((kUp ? 1 : 0) - (kDown ? 1 : 0), -1, 1)
+    }
+
+    if (gameOver) {
+      moveAmount = 0
+      turnInput = 0
+    }
+
+    const jump = !gameOver && (keys['Space'] || touchJumpQueued)
+    touchJumpQueued = false
+    socket.send(JSON.stringify({
+      type: 'input',
+      seq: ++inputSeq,
+      mobileMoving,
+      moveX,
+      moveZ,
+      moveAmount,
+      turnInput,
+      jump,
+    }))
+  }
+
+  function syncNetworkPickups(snapshotPickups: PickupSnapshot[], now: number) {
+    const seen = new Set<string>()
+    for (const pickup of snapshotPickups) {
+      seen.add(pickup.id)
+      let group = networkPickups.get(pickup.id)
+      if (!group) {
+        group = createPickupGroup(pickup.kind)
+        scene.add(group)
+        networkPickups.set(pickup.id, group)
+      }
+      group.rotation.y += 0.04
+      group.position.set(pickup.x, pickup.y + Math.sin(now * 2.8 + pickup.ttl) * 0.08, pickup.z)
+    }
+    for (const [id, group] of networkPickups) {
+      if (!seen.has(id)) {
+        scene.remove(group)
+        networkPickups.delete(id)
+      }
+    }
+  }
+
+  function syncRemoteAvatars(snapshotPlayers: PlayerSnapshot[]) {
+    const seen = new Set<string>()
+    for (const player of snapshotPlayers) {
+      if (player.id === localPlayerId) {
+        continue
+      }
+      seen.add(player.id)
+      let avatar = remoteAvatars.get(player.id)
+      if (!avatar) {
+        const created = createSiggeAvatar(player.color) as RemoteAvatar
+        created.target = new THREE.Vector3(player.x, player.y, player.z)
+        created.targetFacing = player.facing
+        created.hopPhase = 0
+        setAvatarLabel(created, player.alias, player.color)
+        scene.add(created.root)
+        avatar = created
+        remoteAvatars.set(player.id, avatar)
+      }
+      avatar.target.set(player.x, player.y, player.z)
+      avatar.targetFacing = player.facing
+      avatar.armor.visible = player.armorCharges > 0 || player.shieldPotionLeft > 0
+      avatar.armor.rotation.y = player.shieldPotionLeft > 0 ? Math.sin(performance.now() * 0.006) * 0.12 : 0
+      avatar.root.position.lerp(avatar.target, 0.35)
+      avatar.root.rotation.y = avatar.targetFacing
+      if (player.moving && player.onGround) {
+        avatar.hopPhase += 0.18
+        avatar.visual.position.y = 0.1 * (0.5 - 0.5 * Math.cos(avatar.hopPhase * 2.6))
+      } else {
+        avatar.hopPhase = THREE.MathUtils.lerp(avatar.hopPhase, 0, 0.08)
+        avatar.visual.position.y = THREE.MathUtils.lerp(avatar.visual.position.y, 0, 0.2)
+      }
+      if (!player.onGround) {
+        avatar.visual.position.y = 0
+      }
+    }
+
+    for (const [id, avatar] of remoteAvatars) {
+      if (!seen.has(id)) {
+        scene.remove(avatar.root)
+        remoteAvatars.delete(id)
+      }
+    }
+  }
+
+  function applyCarrotSnapshot(snapshotCarrots: CarrotSnapshot[]) {
+    for (let i = 0; i < carrots.length; i++) {
+      const carrot = carrots[i]
+      const state = snapshotCarrots[i]
+      if (!state) {
+        continue
+      }
+      carrot.picked = state.picked
+      setCarrotPlantGrowth(carrot, state.growth)
+    }
+  }
+
+  function applyPredatorSnapshot(predator: PredatorSnapshot, group: THREE.Group, kind: 'fox' | 'cat', dt: number, now: number) {
+    group.visible = predator.mode !== 'hidden'
+    group.position.set(predator.x, predator.y, predator.z)
+    group.rotation.y = predator.rotation
+    if (kind === 'fox') {
+      foxMode = predator.mode
+      foxBiteAnimLeft = predator.biteAnimLeft
+      animateFox(predator.moving, predator.sniffing, dt, now)
+    } else {
+      catMode = predator.mode
+      catBiteAnimLeft = predator.biteAnimLeft
+      animateCat(predator.moving, predator.sniffing, dt, now)
+    }
+  }
+
+  function updateMultiplayerFrame(dt: number, now: number) {
+    sendCurrentInput()
+    if (!latestSnapshot) {
+      renderer.render(scene, camera)
+      return
+    }
+
+    const snapshot = latestSnapshot
+    const player = snapshot.players.find((candidate) => candidate.id === localPlayerId)
+    if (!player) {
+      renderer.render(scene, camera)
+      return
+    }
+
+    if (elPlayerCount) {
+      elPlayerCount.textContent = `Spelare: ${snapshot.players.length}`
+    }
+
+    cycleClock = snapshot.world.cycleClock
+    survivedNights = snapshot.world.survivedNights
+    wasNight = isNightNow()
+    updateDayNight(0)
+
+    energy = player.energy
+    armorCharges = player.armorCharges
+    shieldPotionLeft = player.shieldPotionLeft
+    speedPotionLeft = player.speedPotionLeft
+    gameOver = player.gameOver
+    playerFacing = player.facing
+    if (!isMobileLike()) {
+      cameraYaw = playerFacing
+    }
+
+    const target = new THREE.Vector3(player.x, player.y, player.z)
+    if (siggeG.position.distanceTo(target) > 3) {
+      siggeG.position.copy(target)
+    } else {
+      siggeG.position.lerp(target, 0.55)
+    }
+    siggeG.rotation.y = playerFacing
+
+    if (player.moving && player.onGround) {
+      hopPhase += dt * 11.5
+      siggeVisual.position.y = 0.1 * (0.5 - 0.5 * Math.cos(hopPhase * 2.6))
+    } else {
+      hopPhase = THREE.MathUtils.lerp(hopPhase, 0, dt * 4)
+      siggeVisual.position.y = THREE.MathUtils.lerp(siggeVisual.position.y, 0, Math.min(1, dt * 12))
+    }
+    if (!player.onGround) {
+      siggeVisual.position.y = 0
+    }
+
+    updateItemHud(0)
+    applyCarrotSnapshot(snapshot.carrots)
+    syncNetworkPickups(snapshot.pickups, now)
+    syncRemoteAvatars(snapshot.players)
+    applyPredatorSnapshot(snapshot.predators.fox, foxG, 'fox', dt, now)
+    applyPredatorSnapshot(snapshot.predators.cat, catG, 'cat', dt, now)
+
+    const safe = inSafeZone(player.x, player.y, player.z)
+    elSafe?.classList.toggle('hud-safe--hidden', !safe)
+    elGameOver?.classList.toggle('hud-gameover--hidden', !gameOver)
+    const dangerVisible = !safe && (snapshot.predators.fox.mode !== 'hidden' || snapshot.predators.cat.mode !== 'hidden')
+    elFox?.classList.toggle('hud-fox--hidden', !dangerVisible)
+
+    if (gameOver) {
+      if (elGameOverDetail) {
+        elGameOverDetail.textContent = `Sigge överlevde ${survivedNights} ${survivedNights === 1 ? 'natt' : 'nätter'}.`
+      }
+      elGameOverDialog?.classList.remove('gameover-dialog--hidden')
+    } else {
+      elGameOverDialog?.classList.add('gameover-dialog--hidden')
+    }
+
+    if (pickupMessageLeft > 0) {
+      pickupMessageLeft = Math.max(0, pickupMessageLeft - dt)
+      if (pickupMessageLeft <= 0) {
+        elPickup?.classList.add('hud-pickup--hidden')
+      }
+    }
+
+    const f = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))
+    const back = f.clone().multiplyScalar(-1)
+    const dist = 4.35
+    const horizontalDist = Math.cos(cameraPitch) * dist
+    const camP = new THREE.Vector3(
+      siggeG.position.x + back.x * horizontalDist,
+      siggeG.position.y + 1.15 + Math.sin(cameraPitch) * dist,
+      siggeG.position.z + back.z * horizontalDist,
+    )
+    camera.position.lerp(camP, 0.18)
+    camera.lookAt(
+      new THREE.Vector3(
+        siggeG.position.x,
+        siggeG.position.y + 0.3,
+        siggeG.position.z,
+      ),
+    )
+
+    if (elEnergy) {
+      elEnergy.style.width = `${(energy / ENERGY_MAX) * 100}%`
+    }
+
+    renderer.render(scene, camera)
+  }
 
   function isMobileLike(): boolean {
     return navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches
@@ -1969,6 +2526,17 @@ function main() {
   window.addEventListener('blur', resetTouchControls)
 
   elStartFullscreen?.addEventListener('click', async () => {
+    if (startPending) {
+      return
+    }
+    startPending = true
+    elStartFullscreen.disabled = true
+    selectedAlias = sanitizeLocalAlias()
+    setAvatarColor(localAvatar, selectedColor)
+    setAvatarLabel(localAvatar, selectedAlias, selectedColor)
+    if (elStartStatus) {
+      elStartStatus.textContent = 'Ansluter...'
+    }
     if (isMobileLike()) {
       try {
         if (!document.fullscreenElement) {
@@ -1983,10 +2551,21 @@ function main() {
         // Orientation lock is also best-effort, especially on iOS.
       }
     }
-    titleStarted = true
-    mobileStarted = true
-    last = performance.now() / 1000
-    updateMobileOverlays()
+    try {
+      await connectMultiplayer(selectedAlias, selectedColor)
+      titleStarted = true
+      mobileStarted = true
+      last = performance.now() / 1000
+      updateMobileOverlays()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Kunde inte ansluta.'
+      if (elStartStatus) {
+        elStartStatus.textContent = `${message} Kör npm run dev:multi.`
+      }
+      setNetworkStatus('Inte ansluten')
+      elStartFullscreen.disabled = false
+      startPending = false
+    }
   })
 
   let last = performance.now() / 1000
@@ -2019,6 +2598,21 @@ function main() {
   }
 
   function restartGame() {
+    if (multiplayerSessionStarted()) {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'restart' }))
+      } else {
+        showNotice('Servern är inte ansluten')
+      }
+      gameOver = false
+      resetTouchControls()
+      for (const code of Object.keys(keys)) {
+        keys[code] = false
+      }
+      elGameOverDialog?.classList.add('gameover-dialog--hidden')
+      elGameOver?.classList.add('hud-gameover--hidden')
+      return
+    }
     energy = START_ENERGY
     gameOver = false
     onGround = true
@@ -2095,6 +2689,10 @@ function main() {
     }
     if (mobileBlocked()) {
       renderer.render(scene, camera)
+      return
+    }
+    if (multiplayerSessionStarted()) {
+      updateMultiplayerFrame(dt, now)
       return
     }
     updateDayNight(dt)

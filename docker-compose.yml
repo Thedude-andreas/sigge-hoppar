@@ -1,0 +1,20 @@
+services:
+  sigge-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sigge-hoppar-server:latest
+    container_name: sigge-hoppar-server
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8787
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD", "node", "scripts/check-server.mjs", "ws://127.0.0.1:8787"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

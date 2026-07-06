@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:multi": "sh -c 'node server/index.mjs & server_pid=$!; trap \"kill $server_pid\" EXIT; vite --host 0.0.0.0 --port 5174'",
+    "server": "node server/index.mjs",
+    "server:check": "node scripts/check-server.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "build:amc": "npm run build && find dist -type d -exec chmod 755 {} + && find dist -type f -exec chmod 644 {} + && rm -rf ../AMC/public/99-natter-pa-kronan && mkdir -p ../AMC/public/99-natter-pa-kronan && cp -R dist/. ../AMC/public/99-natter-pa-kronan/ && find ../AMC/public/99-natter-pa-kronan -type d -exec chmod 755 {} + && find ../AMC/public/99-natter-pa-kronan -type f -exec chmod 644 {} +"
   },
   "dependencies": {
-    "three": "^0.175.0"
+    "three": "^0.175.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/three": "^0.184.0",
