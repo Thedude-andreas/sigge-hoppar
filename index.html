@@ -15,7 +15,7 @@
       <div id="hud" aria-hidden="true">
         <p id="hud-title">99 nätter på kronan · <span id="player-name">Sigge</span></p>
         <p id="hud-hint">Piltangenter/WASD eller touchkontroller · mellanrum hoppar</p>
-        <p id="hud-rev" class="hud-rev">Kod: morotsland+15</p>
+        <p id="hud-rev" class="hud-rev">Kod: 3d-kaninval-npc+16</p>
         <div id="survival-wrap">
           <span>Nätter: <strong id="night-count">0</strong></span>
           <span id="cycle-state">Gryning</span>
@@ -45,12 +45,12 @@
           <p>Vem ska försöka överleva 99 nätter?</p>
           <div class="character-grid" role="group" aria-label="Välj kanin">
             <button class="character-card character-card--sigge" type="button" data-character="sigge">
-              <span class="rabbit-preview" aria-hidden="true"><span class="rabbit-ear rabbit-ear--left"></span><span class="rabbit-ear rabbit-ear--right"></span><span class="rabbit-face"></span></span>
+              <canvas class="rabbit-preview-canvas" data-character-preview="sigge" aria-hidden="true"></canvas>
               <strong>Sigge</strong>
               <small>Beige dvärgvädur · röda huset</small>
             </button>
             <button class="character-card character-card--kurre" type="button" data-character="kurre">
-              <span class="rabbit-preview" aria-hidden="true"><span class="rabbit-ear rabbit-ear--left"></span><span class="rabbit-ear rabbit-ear--right"></span><span class="rabbit-face"></span></span>
+              <canvas class="rabbit-preview-canvas" data-character-preview="kurre" aria-hidden="true"></canvas>
               <strong>Kurre</strong>
               <small>Mörkbrun dvärgvädur · vita huset</small>
             </button>

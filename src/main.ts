@@ -16,12 +16,13 @@ const FOX_SPD = 4.9
 const FOX_TIMER_MIN = 8
 const FOX_TIMER_MAX = 18
 const FOX_SNIFF_TIME = 2.7
-const FOX_SNIFF_DIST = 1.35
+// Radierna omsluter även nos och svans, så ingen del av rovdjuret kan korsa burnätet.
+const FOX_HUTCH_CLEARANCE = 1.5
 const CAT_SPD = 5.35
 const CAT_TIMER_MIN = 13
 const CAT_TIMER_MAX = 28
 const CAT_SNIFF_TIME = 2.2
-const CAT_SNIFF_DIST = 1.2
+const CAT_HUTCH_CLEARANCE = 1.2
 const CARROT_PICK = 0.85
 const CARROT_REGROW_MIN = 18
 const CARROT_REGROW_MAX = 28
@@ -197,6 +198,148 @@ function makeSiggeTail(material: THREE.Material) {
   tail.scale.set(1.05, 0.8, 0.88)
   tail.position.set(0, 0.29, -0.5)
   return tail
+}
+
+type RabbitModel = {
+  root: THREE.Group
+  visual: THREE.Group
+  armor: THREE.Group
+  furMaterial: THREE.MeshStandardMaterial
+  innerEarMaterial: THREE.MeshStandardMaterial
+  noseMaterial: THREE.MeshStandardMaterial
+}
+
+function createRabbitModel(character: CharacterId): RabbitModel {
+  const root = new THREE.Group()
+  const visual = new THREE.Group()
+  const furMaterial = makeRabbitMaterial(character)
+  const innerEarMaterial = new THREE.MeshStandardMaterial({
+    color: character === 'sigge' ? 0xc99875 : 0x7f5140,
+    roughness: 0.9,
+    fog: false,
+  })
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x1b130c, fog: false })
+  const noseMaterial = new THREE.MeshStandardMaterial({
+    color: character === 'sigge' ? 0x8a5c45 : 0x3a2018,
+    roughness: 0.8,
+    fog: false,
+  })
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.43, 28, 20), furMaterial)
+  body.scale.set(1.05, 0.78, 1.28)
+  body.position.y = 0.32
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), furMaterial)
+  chest.scale.set(1.15, 0.9, 0.75)
+  chest.position.set(0, 0.39, 0.28)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 22, 16), furMaterial)
+  head.scale.set(1.08, 0.9, 1.02)
+  head.position.set(0, 0.56, 0.38)
+
+  const leftEar = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), furMaterial)
+  leftEar.scale.set(0.62, 2.15, 0.38)
+  leftEar.rotation.set(0.16, 0.06, -0.28)
+  leftEar.position.set(-0.31, 0.42, 0.2)
+  const rightEar = leftEar.clone()
+  rightEar.rotation.set(0.16, -0.06, 0.28)
+  rightEar.position.x = 0.31
+
+  const leftInnerEar = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 8), innerEarMaterial)
+  leftInnerEar.scale.set(0.48, 1.65, 0.13)
+  leftInnerEar.rotation.copy(leftEar.rotation)
+  leftInnerEar.position.set(-0.315, 0.4, 0.245)
+  const rightInnerEar = leftInnerEar.clone()
+  rightInnerEar.rotation.copy(rightEar.rotation)
+  rightInnerEar.position.x = 0.235
+
+  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), eyeMaterial)
+  leftEye.position.set(-0.105, 0.6, 0.62)
+  const rightEye = leftEye.clone()
+  rightEye.position.x = 0.105
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), noseMaterial)
+  nose.scale.set(1.1, 0.75, 0.75)
+  nose.position.set(0, 0.535, 0.655)
+
+  const tail = makeSiggeTail(furMaterial)
+  const armor = new THREE.Group()
+  const armorMaterial = new THREE.MeshStandardMaterial({ color: 0xa8b6c6, metalness: 0.45, roughness: 0.34, fog: false })
+  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.055, 0.66), armorMaterial)
+  backPlate.position.set(0, 0.61, -0.03)
+  backPlate.rotation.x = -0.08
+  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.24), armorMaterial)
+  chestPlate.position.set(0, 0.49, 0.34)
+  chestPlate.rotation.x = 0.18
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.23), armorMaterial)
+  helm.position.set(0, 0.73, 0.43)
+  armor.add(backPlate, chestPlate, helm)
+  armor.visible = false
+
+  visual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, tail, armor)
+  visual.scale.setScalar(SIGGE_SCALE)
+  root.add(visual)
+  return { root, visual, armor, furMaterial, innerEarMaterial, noseMaterial }
+}
+
+function applyRabbitCharacter(model: RabbitModel, character: CharacterId) {
+  const source = makeRabbitMaterial(character)
+  model.furMaterial.map?.dispose()
+  model.furMaterial.color.copy(source.color)
+  model.furMaterial.emissive.copy(source.emissive)
+  model.furMaterial.map = source.map
+  model.furMaterial.needsUpdate = true
+  source.map = null
+  source.dispose()
+  model.innerEarMaterial.color.set(character === 'sigge' ? 0xc99875 : 0x7f5140)
+  model.noseMaterial.color.set(character === 'sigge' ? 0x8a5c45 : 0x3a2018)
+}
+
+type CharacterPreview = {
+  canvas: HTMLCanvasElement
+  renderer: THREE.WebGLRenderer
+  scene: THREE.Scene
+  camera: THREE.PerspectiveCamera
+  rabbit: RabbitModel
+}
+
+function setupCharacterPreviews(): CharacterPreview[] {
+  return Array.from(document.querySelectorAll<HTMLCanvasElement>('[data-character-preview]')).map((canvas) => {
+    const character: CharacterId = canvas.dataset.characterPreview === 'kurre' ? 'kurre' : 'sigge'
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20)
+    camera.position.set(0, 0.52, 2.35)
+    camera.lookAt(0, 0.36, 0)
+    scene.add(new THREE.HemisphereLight(0xfff5dc, 0x30452c, 1.8))
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.1)
+    keyLight.position.set(2.4, 3.2, 2.8)
+    scene.add(keyLight)
+    const rabbit = createRabbitModel(character)
+    rabbit.root.scale.setScalar(1.55)
+    rabbit.root.position.y = -0.08
+    scene.add(rabbit.root)
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+    renderer.setClearColor(0x000000, 0)
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    return { canvas, renderer, scene, camera, rabbit }
+  })
+}
+
+function renderCharacterPreviews(previews: CharacterPreview[], now: number) {
+  for (let i = 0; i < previews.length; i++) {
+    const preview = previews[i]
+    if (preview.canvas.offsetParent === null) {
+      continue
+    }
+    const width = Math.max(1, Math.round(preview.canvas.clientWidth))
+    const height = Math.max(1, Math.round(preview.canvas.clientHeight))
+    if (preview.canvas.width !== Math.round(width * Math.min(window.devicePixelRatio, 2)) || preview.canvas.height !== Math.round(height * Math.min(window.devicePixelRatio, 2))) {
+      preview.renderer.setSize(width, height, false)
+      preview.camera.aspect = width / height
+      preview.camera.updateProjectionMatrix()
+    }
+    preview.rabbit.root.rotation.y = now * 0.7 + i * Math.PI * 0.35
+    preview.rabbit.visual.position.y = Math.sin(now * 2.2 + i) * 0.018
+    preview.renderer.render(preview.scene, preview.camera)
+  }
 }
 
 function buildScene() {
@@ -751,82 +894,32 @@ function buildScene() {
     (row === 1 && col === 0) || (row === 2 && col === 3)
   ))
 
-  // Sigge: root = logik, visual = kropp (skuttar ovanpå)
-  const siggeG = new THREE.Group()
-  const siggeVisual = new THREE.Group()
-  const siggeMat = makeRabbitMaterial('sigge')
-  const kurreMat = makeRabbitMaterial('kurre')
-  const innerEarMat = new THREE.MeshStandardMaterial({
-    color: 0xc99875,
-    roughness: 0.9,
-    fog: false,
-  })
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1b130c, fog: false })
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0x8a5c45, roughness: 0.8, fog: false })
-  const body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.43, 28, 20),
-    siggeMat,
-  )
-  body.scale.set(1.05, 0.78, 1.28)
-  body.position.y = 0.32
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.24, 18, 14), siggeMat)
-  chest.scale.set(1.15, 0.9, 0.75)
-  chest.position.set(0, 0.39, 0.28)
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 22, 16), siggeMat)
-  head.scale.set(1.08, 0.9, 1.02)
-  head.position.set(0, 0.56, 0.38)
-
-  const leftEar = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), siggeMat)
-  leftEar.scale.set(0.62, 2.15, 0.38)
-  leftEar.rotation.set(0.16, 0.06, -0.28)
-  leftEar.position.set(-0.31, 0.42, 0.2)
-  const rightEar = leftEar.clone()
-  rightEar.rotation.set(0.16, -0.06, 0.28)
-  rightEar.position.x = 0.31
-
-  const leftInnerEar = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 8), innerEarMat)
-  leftInnerEar.scale.set(0.48, 1.65, 0.13)
-  leftInnerEar.rotation.copy(leftEar.rotation)
-  leftInnerEar.position.set(-0.315, 0.4, 0.245)
-  const rightInnerEar = leftInnerEar.clone()
-  rightInnerEar.rotation.copy(rightEar.rotation)
-  rightInnerEar.position.x = 0.235
-
-  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 10, 8), eyeMat)
-  leftEye.position.set(-0.105, 0.6, 0.62)
-  const rightEye = leftEye.clone()
-  rightEye.position.x = 0.105
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), noseMat)
-  nose.scale.set(1.1, 0.75, 0.75)
-  nose.position.set(0, 0.535, 0.655)
-
-  const siggeTail = makeSiggeTail(siggeMat)
-  const siggeArmor = new THREE.Group()
-  const armorMat = new THREE.MeshStandardMaterial({ color: 0xa8b6c6, metalness: 0.45, roughness: 0.34, fog: false })
-  const backPlate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.055, 0.66), armorMat)
-  backPlate.position.set(0, 0.61, -0.03)
-  backPlate.rotation.x = -0.08
-  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.24), armorMat)
-  chestPlate.position.set(0, 0.49, 0.34)
-  chestPlate.rotation.x = 0.18
-  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.04, 0.23), armorMat)
-  helm.position.set(0, 0.73, 0.43)
-  siggeArmor.add(backPlate, chestPlate, helm)
-  siggeArmor.visible = false
-  siggeVisual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail, siggeArmor)
-  siggeVisual.scale.setScalar(SIGGE_SCALE)
-  siggeG.add(siggeVisual)
+  // Spelaren använder samma modellbyggare som NPC-kaninerna och 3D-valet på startskärmen.
+  const playerRabbit = createRabbitModel('sigge')
+  const siggeG = playerRabbit.root
+  const siggeVisual = playerRabbit.visual
+  const siggeArmor = playerRabbit.armor
   siggeG.position.copy(neighborhood.spawns.sigge)
   scene.add(siggeG)
 
   const setPlayerCharacter = (character: CharacterId) => {
-    const source = character === 'sigge' ? makeRabbitMaterial('sigge') : kurreMat
-    siggeMat.color.copy(source.color)
-    siggeMat.emissive.copy(source.emissive)
-    siggeMat.map = source.map
-    siggeMat.needsUpdate = true
-    innerEarMat.color.set(character === 'sigge' ? 0xc99875 : 0x7f5140)
-    noseMat.color.set(character === 'sigge' ? 0x8a5c45 : 0x3a2018)
+    applyRabbitCharacter(playerRabbit, character)
+  }
+
+  const npcRabbits = {
+    sigge: createRabbitModel('sigge'),
+    kurre: createRabbitModel('kurre'),
+  }
+  for (const [character, rabbit] of Object.entries(npcRabbits) as [CharacterId, RabbitModel][]) {
+    const hutch = neighborhood.hutches.find((candidate) => candidate.name.toLowerCase() === character)!
+    rabbit.root.position.set(hutch.center.x, hutch.aabb.y0, hutch.center.z - 0.18)
+    rabbit.root.rotation.y = 0
+    rabbit.root.visible = false
+    scene.add(rabbit.root)
+  }
+  const setNpcForSelection = (selected: CharacterId) => {
+    npcRabbits.sigge.root.visible = selected === 'kurre'
+    npcRabbits.kurre.root.visible = selected === 'sigge'
   }
 
   // Fox
@@ -1056,6 +1149,8 @@ function buildScene() {
     siggeVisual,
     siggeArmor,
     setPlayerCharacter,
+    setNpcForSelection,
+    npcRabbits,
     foxG,
     catG,
     carrots,
@@ -1094,6 +1189,7 @@ function main() {
   const elStartScreen = document.getElementById('start-screen') as HTMLDivElement | null
   const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
   const characterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-character]'))
+  const characterPreviews = setupCharacterPreviews()
   const elPlayerName = document.getElementById('player-name') as HTMLSpanElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
@@ -1105,6 +1201,8 @@ function main() {
     siggeVisual,
     siggeArmor,
     setPlayerCharacter,
+    setNpcForSelection,
+    npcRabbits,
     foxG,
     catG,
     carrots,
@@ -1337,6 +1435,49 @@ function main() {
       result = resolveOneHutchWalls(hutch, prevX, prevZ, result.x, result.z)
     }
     return result
+  }
+
+  function resolvePredatorOutsideHutches(x: number, z: number, clearance: number): { x: number; z: number } {
+    let result = { x, z }
+    for (const hutch of hutches) {
+      result = resolveCircleAabb2(
+        hutch.aabb.min.x,
+        hutch.aabb.min.y,
+        hutch.aabb.max.x,
+        hutch.aabb.max.y,
+        result.x,
+        result.z,
+        clearance,
+      )
+    }
+    return result
+  }
+
+  function setTargetOutsideHutch(
+    target: THREE.Vector3,
+    hutch: HutchZone,
+    from: THREE.Vector3,
+    clearance: number,
+    y: number,
+  ) {
+    const direction = from.clone().sub(hutch.center)
+    direction.y = 0
+    if (direction.lengthSq() < 0.01) {
+      direction.set(0, 0, -1)
+    }
+    direction.normalize()
+    const halfW = hutch.spec.w / 2
+    const halfD = hutch.spec.d / 2
+    const tx = Math.abs(direction.x) < 1e-5 ? Number.POSITIVE_INFINITY : halfW / Math.abs(direction.x)
+    const tz = Math.abs(direction.z) < 1e-5 ? Number.POSITIVE_INFINITY : halfD / Math.abs(direction.z)
+    const boundaryDistance = Math.min(tx, tz)
+    const dominantAxis = Math.max(Math.abs(direction.x), Math.abs(direction.z))
+    const centerDistance = boundaryDistance + clearance / dominantAxis
+    target.set(
+      hutch.center.x + direction.x * centerDistance,
+      y,
+      hutch.center.z + direction.z * centerDistance,
+    )
   }
 
   function isNightNow(): boolean {
@@ -1604,6 +1745,9 @@ function main() {
     const stepLen = Math.min(dist, speed * dt)
     to.normalize()
     foxG.position.addScaledVector(to, stepLen)
+    const outside = resolvePredatorOutsideHutches(foxG.position.x, foxG.position.z, FOX_HUTCH_CLEARANCE)
+    foxG.position.x = outside.x
+    foxG.position.z = outside.z
     foxG.position.y = terrainHeightAt(foxG.position.x, foxG.position.z) + 0.25
     foxG.rotation.y = Math.atan2(to.x, to.z)
     return dist - stepLen
@@ -1659,17 +1803,10 @@ function main() {
     const hutch = hutches.reduce((nearest, candidate) => (
       candidate.center.distanceToSquared(foxG.position) < nearest.center.distanceToSquared(foxG.position) ? candidate : nearest
     ))
-    const side = foxG.position.clone().sub(hutch.center)
-    side.y = 0
-    if (side.lengthSq() < 0.01) {
-      side.set(0, 0, -1)
-    }
+    const side = foxG.position.clone().sub(hutch.center).setY(0)
+    if (side.lengthSq() < 0.01) side.set(0, 0, -1)
     side.normalize()
-    foxTarget.set(
-      hutch.center.x + side.x * FOX_SNIFF_DIST,
-      0.25,
-      hutch.center.z + side.z * FOX_SNIFF_DIST,
-    )
+    setTargetOutsideHutch(foxTarget, hutch, foxG.position, FOX_HUTCH_CLEARANCE, 0.25)
     foxLeaveTarget.set(
       hutch.center.x + side.x * (INNER + 8),
       0.25,
@@ -1708,6 +1845,9 @@ function main() {
     const stepLen = Math.min(dist, speed * dt)
     to.normalize()
     catG.position.addScaledVector(to, stepLen)
+    const outside = resolvePredatorOutsideHutches(catG.position.x, catG.position.z, CAT_HUTCH_CLEARANCE)
+    catG.position.x = outside.x
+    catG.position.z = outside.z
     catG.position.y = terrainHeightAt(catG.position.x, catG.position.z) + 0.22
     catG.rotation.y = Math.atan2(to.x, to.z)
     return dist - stepLen
@@ -1763,17 +1903,10 @@ function main() {
     const hutch = hutches.reduce((nearest, candidate) => (
       candidate.center.distanceToSquared(catG.position) < nearest.center.distanceToSquared(catG.position) ? candidate : nearest
     ))
-    const side = catG.position.clone().sub(hutch.center)
-    side.y = 0
-    if (side.lengthSq() < 0.01) {
-      side.set(0, 0, -1)
-    }
+    const side = catG.position.clone().sub(hutch.center).setY(0)
+    if (side.lengthSq() < 0.01) side.set(0, 0, -1)
     side.normalize()
-    catTarget.set(
-      hutch.center.x + side.x * CAT_SNIFF_DIST,
-      0.22,
-      hutch.center.z + side.z * CAT_SNIFF_DIST,
-    )
+    setTargetOutsideHutch(catTarget, hutch, catG.position, CAT_HUTCH_CLEARANCE, 0.22)
     catLeaveTarget.set(
       hutch.center.x + side.x * (INNER + 8),
       0.22,
@@ -2035,6 +2168,7 @@ function main() {
     button.addEventListener('click', async () => {
       selectedCharacter = button.dataset.character === 'kurre' ? 'kurre' : 'sigge'
       setPlayerCharacter(selectedCharacter)
+      setNpcForSelection(selectedCharacter)
       siggeG.position.copy(spawns[selectedCharacter])
       siggeG.rotation.set(0, 0, 0)
       if (elPlayerName) {
@@ -2165,6 +2299,7 @@ function main() {
     if (dt > 0.1) {
       dt = 0.1
     }
+    renderCharacterPreviews(characterPreviews, now)
     if (mobileBlocked()) {
       renderer.render(scene, camera)
       return
@@ -2300,6 +2435,14 @@ function main() {
     }
     if (!onGround) {
       siggeVisual.position.y = 0
+    }
+
+    for (const [index, rabbit] of Object.values(npcRabbits).entries()) {
+      if (!rabbit.root.visible) {
+        continue
+      }
+      rabbit.visual.position.y = Math.sin(now * 2.4 + index) * 0.018
+      rabbit.root.rotation.y = Math.sin(now * 0.75 + index) * 0.16
     }
 
     updateCarrots(dt)
