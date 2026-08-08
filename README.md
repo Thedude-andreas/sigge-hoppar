@@ -2,6 +2,10 @@
 
 Three.js-spel: välj Sigge eller Kurre (dvärgvädurar) och överlev dag/natt-cykler, räv och katt i ett skalenligt kvarter på Kronan. Miljön innehåller röda huset, vita huset, kaninernas separata burar, grannhus, uthus, vägar, gc-väg, slänt, häckar och skog. Morötter återväxer och skyddsföremål dyker upp under spelet. Spelas på [andreasmartensson.com/99-natter-pa-kronan](https://andreasmartensson.com/99-natter-pa-kronan/) efter publicering från AMC.
 
+## Kartreferens
+
+Kartobjekten i `src/neighborhood.ts` anges i pixelkoordinater från det kalibrerade Lantmäteriet-ortofotot och omvandlas till spelmeter. Skalstocken ger `50 m / 371 px`, lokalt origo är ortofotopixel `(350, 660)`, X ökar åt höger/öst och Z ökar nedåt/söder. Gc-vägen har en inmätt mittlinje och terränghöjden bildar slänten enbart mellan röda tomtens södra häck och gångvägen.
+
 ## Utveckling
 
 ```bash
