@@ -209,6 +209,24 @@ type RabbitModel = {
   noseMaterial: THREE.MeshStandardMaterial
 }
 
+type RabbitNpc = RabbitModel & {
+  character: CharacterId
+  hutch: HutchZone
+  target: THREE.Vector2
+  patrolIndex: number
+  waitLeft: number
+  walkPhase: number
+}
+
+// En slinga längs burens fria inneryta. Alla punkter lämnar kroppsmarginal till nätet.
+const NPC_PATROL_POINTS: readonly (readonly [number, number])[] = [
+  [-0.82, 0.75],
+  [-0.84, -0.05],
+  [-0.2, -0.78],
+  [0.82, -0.72],
+  [0.84, 0.75],
+]
+
 function createRabbitModel(character: CharacterId): RabbitModel {
   const root = new THREE.Group()
   const visual = new THREE.Group()
@@ -906,15 +924,24 @@ function buildScene() {
     applyRabbitCharacter(playerRabbit, character)
   }
 
-  const npcRabbits = {
-    sigge: createRabbitModel('sigge'),
-    kurre: createRabbitModel('kurre'),
-  }
-  for (const [character, rabbit] of Object.entries(npcRabbits) as [CharacterId, RabbitModel][]) {
+  const npcRabbits = {} as Record<CharacterId, RabbitNpc>
+  for (const [index, character] of (['sigge', 'kurre'] as CharacterId[]).entries()) {
+    const model = createRabbitModel(character)
     const hutch = neighborhood.hutches.find((candidate) => candidate.name.toLowerCase() === character)!
+    const [targetX, targetZ] = NPC_PATROL_POINTS[(index * 2 + 1) % NPC_PATROL_POINTS.length]
+    const rabbit: RabbitNpc = {
+      ...model,
+      character,
+      hutch,
+      target: new THREE.Vector2(hutch.center.x + targetX, hutch.center.z + targetZ),
+      patrolIndex: (index * 2 + 1) % NPC_PATROL_POINTS.length,
+      waitLeft: 0.35 + index * 0.25,
+      walkPhase: index * Math.PI,
+    }
     rabbit.root.position.set(hutch.center.x, hutch.aabb.y0, hutch.center.z - 0.18)
     rabbit.root.rotation.y = 0
     rabbit.root.visible = false
+    npcRabbits[character] = rabbit
     scene.add(rabbit.root)
   }
   const setNpcForSelection = (selected: CharacterId) => {
@@ -2292,6 +2319,41 @@ function main() {
 
   elRestart?.addEventListener('click', restartGame)
 
+  function updateNpcRabbits(dt: number, now: number) {
+    for (const [index, rabbit] of Object.values(npcRabbits).entries()) {
+      if (!rabbit.root.visible) {
+        continue
+      }
+
+      if (rabbit.waitLeft > 0) {
+        rabbit.waitLeft = Math.max(0, rabbit.waitLeft - dt)
+        rabbit.visual.position.y = THREE.MathUtils.lerp(rabbit.visual.position.y, 0, Math.min(1, dt * 9))
+        rabbit.root.rotation.y += Math.sin(now * 1.8 + index) * dt * 0.08
+        continue
+      }
+
+      const dx = rabbit.target.x - rabbit.root.position.x
+      const dz = rabbit.target.y - rabbit.root.position.z
+      const distance = Math.hypot(dx, dz)
+      if (distance < 0.055) {
+        rabbit.patrolIndex = (rabbit.patrolIndex + 1) % NPC_PATROL_POINTS.length
+        const [localX, localZ] = NPC_PATROL_POINTS[rabbit.patrolIndex]
+        rabbit.target.set(rabbit.hutch.center.x + localX, rabbit.hutch.center.z + localZ)
+        rabbit.waitLeft = 0.45 + ((rabbit.patrolIndex + index) % 3) * 0.28
+        continue
+      }
+
+      const speed = 0.34 + index * 0.025
+      const stepLength = Math.min(distance, speed * dt)
+      rabbit.root.position.x += (dx / distance) * stepLength
+      rabbit.root.position.z += (dz / distance) * stepLength
+      rabbit.root.position.y = rabbit.hutch.aabb.y0
+      rabbit.root.rotation.y = Math.atan2(dx, dz)
+      rabbit.walkPhase += dt * 9.2
+      rabbit.visual.position.y = 0.052 * (0.5 - 0.5 * Math.cos(rabbit.walkPhase * 2.6))
+    }
+  }
+
   function step(t: number) {
     const now = t / 1000
     let dt = now - last
@@ -2437,13 +2499,7 @@ function main() {
       siggeVisual.position.y = 0
     }
 
-    for (const [index, rabbit] of Object.values(npcRabbits).entries()) {
-      if (!rabbit.root.visible) {
-        continue
-      }
-      rabbit.visual.position.y = Math.sin(now * 2.4 + index) * 0.018
-      rabbit.root.rotation.y = Math.sin(now * 0.75 + index) * 0.16
-    }
+    updateNpcRabbits(dt, now)
 
     updateCarrots(dt)
     updatePickups(dt, now)
