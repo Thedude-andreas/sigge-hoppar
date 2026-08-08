@@ -669,7 +669,7 @@ function buildScene() {
   // Spelmekaniken nedan behålls, men arbetar mot den nya miljöns kolliderare och burar.
   const neighborhood = buildNeighborhood(scene)
   const realCarrotPatchCenter = neighborhood.carrotPatches[0]
-  const realFarCarrotPatchCenter = neighborhood.carrotPatches[1]
+  const whiteHouseCarrotPatchCenter = neighborhood.carrotPatches[1]
   const realSoilMat = new THREE.MeshStandardMaterial({ color: 0x5a3821, roughness: 0.96 })
   const realSoilDarkMat = new THREE.MeshStandardMaterial({ color: 0x3d2819, roughness: 0.98 })
   const addRealCarrotPatchBed = (center: THREE.Vector2, w: number, d: number, rows: number[]) => {
@@ -684,7 +684,7 @@ function buildScene() {
     }
   }
   addRealCarrotPatchBed(realCarrotPatchCenter, 7.4, 4.6, [-1.35, -0.45, 0.45, 1.35])
-  addRealCarrotPatchBed(realFarCarrotPatchCenter, 6.4, 4.2, [-1.25, -0.42, 0.42, 1.25])
+  addRealCarrotPatchBed(whiteHouseCarrotPatchCenter, 3.6, 4.2, [-1.25, -0.42, 0.42, 1.25])
 
   // Carrots
   const carrots: CarrotPlant[] = []
@@ -747,8 +747,8 @@ function buildScene() {
   addCarrots(realCarrotPatchCenter, [-1.35, -0.45, 0.45, 1.35], [-2.7, -1.35, 0, 1.35, 2.7], (row, col) => (
     (row === 0 && col === 4) || (row === 3 && col === 0)
   ))
-  addCarrots(realFarCarrotPatchCenter, [-1.25, -0.42, 0.42, 1.25], [-2.25, -1.1, 0, 1.1, 2.25], (row, col) => (
-    (row === 1 && col === 0) || (row === 2 && col === 4)
+  addCarrots(whiteHouseCarrotPatchCenter, [-1.25, -0.42, 0.42, 1.25], [-1.25, -0.42, 0.42, 1.25], (row, col) => (
+    (row === 1 && col === 0) || (row === 2 && col === 3)
   ))
 
   // Sigge: root = logik, visual = kropp (skuttar ovanpå)

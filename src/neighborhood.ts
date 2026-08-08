@@ -506,7 +506,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
 
   // Friggebodar och uthus.
   addMappedOutbuilding([314, 580], 36, 31, 0xd7d1c1)
-  addMappedOutbuilding([482, 535], 38, 32, 0x9a3329)
+  // Ytan vid [492, 535] är morotslandet på röda gården, inte ett uthus.
   addMappedOutbuilding([335, 872], 34, 29, 0x777d7b)
   addMappedOutbuilding([475, 935], 38, 34, 0x8f928c)
   addMappedOutbuilding([78, 1000], 42, 34, 0xa8a8a0)
@@ -542,7 +542,12 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
     colliders,
     hutches: [siggeHutch, kurreHutch],
     spawns: { sigge: siggeHutch.spawn.clone(), kurre: kurreHutch.spawn.clone() },
-    carrotPatches: [new THREE.Vector2(...orthoPoint([492, 535])), new THREE.Vector2(...orthoPoint([215, 970]))],
+    carrotPatches: [
+      // Röda gården, öster om uteplatsen.
+      new THREE.Vector2(...orthoPoint([492, 535])),
+      // Vita gården, på den fria remsan mellan huset och den östra häcken.
+      new THREE.Vector2(...orthoPoint([462, 1015])),
+    ],
     windowLights,
     windowMaterials,
   }
