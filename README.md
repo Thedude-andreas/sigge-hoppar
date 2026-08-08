@@ -1,6 +1,6 @@
 # 99 nätter på kronan
 
-Three.js-spel: Sigge (dvärgvädur) i en trädgård med dag/natt-cykler, räv, katt, återväxande morötter och skyddsföremål. Spelas på [andreasmartensson.com/99-natter-pa-kronan](https://andreasmartensson.com/99-natter-pa-kronan/) efter publicering från AMC.
+Three.js-spel: välj Sigge eller Kurre (dvärgvädurar) och överlev dag/natt-cykler, räv och katt i ett skalenligt kvarter på Kronan. Miljön innehåller röda huset, vita huset, kaninernas separata burar, grannhus, uthus, vägar, gc-väg, slänt, häckar och skog. Morötter återväxer och skyddsföremål dyker upp under spelet. Spelas på [andreasmartensson.com/99-natter-pa-kronan](https://andreasmartensson.com/99-natter-pa-kronan/) efter publicering från AMC.
 
 ## Utveckling
 
@@ -32,4 +32,5 @@ Kort: `public/99-natter-pa-kronan/` i AMC speglas till webrooten som `/99-natter
 
 ## Spelkontroller
 
+- Välj Sigge (beige, röda huset) eller Kurre (mörkbrun, vita huset) på startskärmen.
 - Piltangenter (och WASD) fram, bak, sväng; mellanslag hoppar.

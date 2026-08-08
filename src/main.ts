@@ -1,9 +1,10 @@
 import './style.css'
 import * as THREE from 'three'
 import { BUILD_TAG } from './version'
+import { buildNeighborhood, terrainHeightAt, WORLD_HALF_X, WORLD_HALF_Z, type HutchZone } from './neighborhood'
 
 /* --- Constant world layout --- */
-const INNER = 17.5
+const INNER = WORLD_HALF_X
 const GROUND = 0
 const SIGGE_SCALE = 0.72
 const PLAYER_H = 0
@@ -75,6 +76,7 @@ type HutchSpec = {
   doorW: number
 }
 type FoxMode = 'hidden' | 'chase' | 'sniff' | 'leave'
+type CharacterId = 'sigge' | 'kurre'
 type PickupKind = 'light-armor' | 'heavy-armor' | 'energy-potion' | 'speed-potion' | 'shield-potion'
 type Pickup = {
   group: THREE.Group
@@ -145,13 +147,13 @@ function setCarrotPlantGrowth(plant: CarrotPlant, growth: number) {
   plant.edible.scale.setScalar(0.86 + g * 0.14)
 }
 
-function makeFurTexture() {
+function makeFurTexture(character: CharacterId) {
   const size = 128
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#ead29a'
+  ctx.fillStyle = character === 'sigge' ? '#ead29a' : '#4a2d1d'
   ctx.fillRect(0, 0, size, size)
 
   for (let i = 0; i < 620; i++) {
@@ -159,7 +161,9 @@ function makeFurTexture() {
     const y = Math.random() * size
     const len = 2 + Math.random() * 7
     const shade = Math.random()
-    ctx.strokeStyle = shade > 0.55 ? 'rgba(255, 240, 201, 0.38)' : 'rgba(128, 89, 45, 0.14)'
+    ctx.strokeStyle = character === 'sigge'
+      ? (shade > 0.55 ? 'rgba(255, 240, 201, 0.38)' : 'rgba(128, 89, 45, 0.14)')
+      : (shade > 0.55 ? 'rgba(164, 112, 75, 0.34)' : 'rgba(25, 12, 8, 0.25)')
     ctx.lineWidth = 0.55 + Math.random() * 0.8
     ctx.beginPath()
     ctx.moveTo(x, y)
@@ -175,12 +179,12 @@ function makeFurTexture() {
   return tex
 }
 
-function makeSiggeMaterial() {
-  const fur = makeFurTexture()
+function makeRabbitMaterial(character: CharacterId) {
+  const fur = makeFurTexture(character)
   return new THREE.MeshStandardMaterial({
-    color: 0xf0d08b,
+    color: character === 'sigge' ? 0xf0d08b : 0x5b3522,
     map: fur,
-    emissive: 0x3d2508,
+    emissive: character === 'sigge' ? 0x3d2508 : 0x160a05,
     emissiveIntensity: 0.12,
     roughness: 0.95,
     metalness: 0,
@@ -198,7 +202,7 @@ function makeSiggeTail(material: THREE.Material) {
 function buildScene() {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x6eb8d4)
-  scene.fog = new THREE.Fog(0x8ec8e0, 22, 55)
+  scene.fog = new THREE.Fog(0x8ec8e0, 28, 125)
 
   const hemi = new THREE.HemisphereLight(0xd8f0ff, 0x3a5a30, 0.85)
   scene.add(hemi)
@@ -219,6 +223,9 @@ function buildScene() {
   scene.add(sunOrb, moonOrb)
   const windowLights: THREE.PointLight[] = []
 
+  // Den gamla prototypträdgården ligger kvar som referens men byggs inte längre.
+  // Vites produktionsoptimering tar bort hela det här konstanta blocket.
+  if (false) {
   // Lawn
   const groundGeo = new THREE.PlaneGeometry(50, 50)
   const groundMat = new THREE.MeshStandardMaterial({ color: 0x3d7a3b, roughness: 0.9 })
@@ -654,6 +661,31 @@ function buildScene() {
     y1: hutchH,
   }
 
+  void houseAabb
+  void hutchAabb
+  }
+
+  // Den tidigare prototypträdgården ovan ersätts av den skalenliga Kronan-kartan.
+  // Spelmekaniken nedan behålls, men arbetar mot den nya miljöns kolliderare och burar.
+  const neighborhood = buildNeighborhood(scene)
+  const realCarrotPatchCenter = neighborhood.carrotPatches[0]
+  const realFarCarrotPatchCenter = neighborhood.carrotPatches[1]
+  const realSoilMat = new THREE.MeshStandardMaterial({ color: 0x5a3821, roughness: 0.96 })
+  const realSoilDarkMat = new THREE.MeshStandardMaterial({ color: 0x3d2819, roughness: 0.98 })
+  const addRealCarrotPatchBed = (center: THREE.Vector2, w: number, d: number, rows: number[]) => {
+    const patch = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, d), realSoilMat)
+    patch.position.set(center.x, terrainHeightAt(center.x, center.y) + 0.04, center.y)
+    scene.add(patch)
+    for (const rowZ of rows) {
+      const row = new THREE.Mesh(new THREE.BoxGeometry(w - 0.55, 0.035, 0.15), realSoilDarkMat)
+      const z = center.y + rowZ
+      row.position.set(center.x, terrainHeightAt(center.x, z) + 0.095, z)
+      scene.add(row)
+    }
+  }
+  addRealCarrotPatchBed(realCarrotPatchCenter, 7.4, 4.6, [-1.35, -0.45, 0.45, 1.35])
+  addRealCarrotPatchBed(realFarCarrotPatchCenter, 6.4, 4.2, [-1.25, -0.42, 0.42, 1.25])
+
   // Carrots
   const carrots: CarrotPlant[] = []
   const carrotMat = new THREE.MeshStandardMaterial({ color: 0xe9781d, emissive: 0x1f0a00, roughness: 0.72 })
@@ -703,28 +735,27 @@ function buildScene() {
         const plant = makeCarrot(row * 0.45 + col * 0.18)
         const offsetX = ((row + col) % 2 === 0 ? -0.08 : 0.08)
         const offsetZ = col % 2 === 0 ? 0.04 : -0.04
-        plant.root.position.set(
-          center.x + cols[col] + offsetX,
-          0.08,
-          center.y + rows[row] + offsetZ,
-        )
+        const plantX = center.x + cols[col] + offsetX
+        const plantZ = center.y + rows[row] + offsetZ
+        plant.root.position.set(plantX, terrainHeightAt(plantX, plantZ) + 0.08, plantZ)
         plant.root.rotation.y = ((row + col) % 3 - 1) * 0.08
         scene.add(plant.root)
         carrots.push(plant)
       }
     }
   }
-  addCarrots(carrotPatchCenter, [-1.85, -0.62, 0.62, 1.85], [-3.2, -1.6, 0, 1.6, 3.2], (row, col) => (
+  addCarrots(realCarrotPatchCenter, [-1.35, -0.45, 0.45, 1.35], [-2.7, -1.35, 0, 1.35, 2.7], (row, col) => (
     (row === 0 && col === 4) || (row === 3 && col === 0)
   ))
-  addCarrots(farCarrotPatchCenter, [-1.45, -0.48, 0.48, 1.45], [-2.55, -1.25, 0, 1.25, 2.55], (row, col) => (
+  addCarrots(realFarCarrotPatchCenter, [-1.25, -0.42, 0.42, 1.25], [-2.25, -1.1, 0, 1.1, 2.25], (row, col) => (
     (row === 1 && col === 0) || (row === 2 && col === 4)
   ))
 
   // Sigge: root = logik, visual = kropp (skuttar ovanpå)
   const siggeG = new THREE.Group()
   const siggeVisual = new THREE.Group()
-  const siggeMat = makeSiggeMaterial()
+  const siggeMat = makeRabbitMaterial('sigge')
+  const kurreMat = makeRabbitMaterial('kurre')
   const innerEarMat = new THREE.MeshStandardMaterial({
     color: 0xc99875,
     roughness: 0.9,
@@ -785,8 +816,18 @@ function buildScene() {
   siggeVisual.add(body, chest, head, leftEar, rightEar, leftInnerEar, rightInnerEar, leftEye, rightEye, nose, siggeTail, siggeArmor)
   siggeVisual.scale.setScalar(SIGGE_SCALE)
   siggeG.add(siggeVisual)
-  siggeG.position.set(0, PLAYER_H, 0)
+  siggeG.position.copy(neighborhood.spawns.sigge)
   scene.add(siggeG)
+
+  const setPlayerCharacter = (character: CharacterId) => {
+    const source = character === 'sigge' ? makeRabbitMaterial('sigge') : kurreMat
+    siggeMat.color.copy(source.color)
+    siggeMat.emissive.copy(source.emissive)
+    siggeMat.map = source.map
+    siggeMat.needsUpdate = true
+    innerEarMat.color.set(character === 'sigge' ? 0xc99875 : 0x7f5140)
+    noseMat.color.set(character === 'sigge' ? 0x8a5c45 : 0x3a2018)
+  }
 
   // Fox
   const foxG = new THREE.Group()
@@ -1014,6 +1055,7 @@ function buildScene() {
     siggeG,
     siggeVisual,
     siggeArmor,
+    setPlayerCharacter,
     foxG,
     catG,
     carrots,
@@ -1022,13 +1064,11 @@ function buildScene() {
     moonLight,
     sunOrb,
     moonOrb,
-    windowLights,
-    glassMat,
-    houseAabb,
-    hutchAabb,
-    hutchCenter,
-    rampSpec,
-    hutchSpec,
+    windowLights: neighborhood.windowLights,
+    windowMaterials: neighborhood.windowMaterials,
+    colliders: neighborhood.colliders,
+    hutches: neighborhood.hutches,
+    spawns: neighborhood.spawns,
   }
 }
 
@@ -1053,7 +1093,8 @@ function main() {
   const elJumpZone = document.getElementById('jump-zone') as HTMLButtonElement | null
   const elStartScreen = document.getElementById('start-screen') as HTMLDivElement | null
   const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
-  const elStartFullscreen = document.getElementById('start-fullscreen') as HTMLButtonElement | null
+  const characterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-character]'))
+  const elPlayerName = document.getElementById('player-name') as HTMLSpanElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
     rev.textContent = `Kod: ${BUILD_TAG}`
@@ -1063,6 +1104,7 @@ function main() {
     siggeG,
     siggeVisual,
     siggeArmor,
+    setPlayerCharacter,
     foxG,
     catG,
     carrots,
@@ -1072,12 +1114,10 @@ function main() {
     sunOrb,
     moonOrb,
     windowLights,
-    glassMat,
-    houseAabb,
-    hutchAabb,
-    hutchCenter,
-    rampSpec,
-    hutchSpec,
+    windowMaterials,
+    colliders,
+    hutches,
+    spawns,
   } = buildScene()
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200)
@@ -1140,6 +1180,7 @@ function main() {
   let pickupMessageLeft = 0
   let mobileStarted = !isMobileLike()
   let titleStarted = false
+  let selectedCharacter: CharacterId = 'sigge'
   const foxTarget = new THREE.Vector3()
   const foxLeaveTarget = new THREE.Vector3()
   const catTarget = new THREE.Vector3()
@@ -1179,19 +1220,20 @@ function main() {
   }
 
   function inSafeZone(x: number, y: number, z: number): boolean {
-    return (
-      aabb2ContainsXZ(hutchAabb, x, z) && y + PLAYER_H * 0.3 >= hutchAabb.y0 && y < hutchAabb.y1 + 0.2
-    )
+    return hutches.some((hutch) => (
+      aabb2ContainsXZ(hutch.aabb, x, z) && y + PLAYER_H * 0.3 >= hutch.aabb.y0 && y < hutch.aabb.y1 + 0.2
+    ))
   }
 
   function hutchFloorY(x: number, z: number): number {
-    if (!aabb2ContainsXZ(hutchAabb, x, z)) {
-      return GROUND
+    const hutch = hutches.find((candidate) => aabb2ContainsXZ(candidate.aabb, x, z))
+    if (!hutch) {
+      return terrainHeightAt(x, z)
     }
 
-    const localX = x - hutchCenter.x
-    const localZ = z - hutchCenter.z
-    let floorY = GROUND
+    const localX = x - hutch.center.x
+    const localZ = z - hutch.center.z
+    let floorY = hutch.aabb.y0
 
     const onShelf = (
       localX >= 0.43 - 0.43 - PLAYER_R * 0.35 &&
@@ -1200,37 +1242,37 @@ function main() {
       localZ <= -0.48 + 0.31 + PLAYER_R * 0.35
     )
     if (onShelf) {
-      floorY = Math.max(floorY, rampSpec.yTop)
+      floorY = Math.max(floorY, hutch.aabb.y0 + hutch.ramp.yTop)
     }
 
     const onRamp = (
-      localX >= rampSpec.x - rampSpec.w / 2 - PLAYER_R * 0.25 &&
-      localX <= rampSpec.x + rampSpec.w / 2 + PLAYER_R * 0.25 &&
-      localZ >= rampSpec.zTop &&
-      localZ <= rampSpec.zBottom
+      localX >= hutch.ramp.x - hutch.ramp.w / 2 - PLAYER_R * 0.25 &&
+      localX <= hutch.ramp.x + hutch.ramp.w / 2 + PLAYER_R * 0.25 &&
+      localZ >= hutch.ramp.zTop &&
+      localZ <= hutch.ramp.zBottom
     )
     if (onRamp) {
-      const t = THREE.MathUtils.clamp((rampSpec.zBottom - localZ) / (rampSpec.zBottom - rampSpec.zTop), 0, 1)
-      floorY = Math.max(floorY, THREE.MathUtils.lerp(rampSpec.yBottom, rampSpec.yTop, t))
+      const t = THREE.MathUtils.clamp((hutch.ramp.zBottom - localZ) / (hutch.ramp.zBottom - hutch.ramp.zTop), 0, 1)
+      floorY = Math.max(floorY, hutch.aabb.y0 + THREE.MathUtils.lerp(hutch.ramp.yBottom, hutch.ramp.yTop, t))
     }
 
     return floorY
   }
 
-  function inHutchDoor(localX: number): boolean {
-    return Math.abs(localX - hutchSpec.doorX) <= hutchSpec.doorW / 2
+  function inHutchDoor(hutch: HutchZone, localX: number): boolean {
+    return Math.abs(localX - hutch.spec.doorX) <= hutch.spec.doorW / 2
   }
 
-  function resolveHutchWalls(prevX: number, prevZ: number, x: number, z: number): { x: number; z: number } {
-    const halfW = hutchSpec.w / 2
-    const halfD = hutchSpec.d / 2
-    const prevLocalX = prevX - hutchCenter.x
-    const prevLocalZ = prevZ - hutchCenter.z
-    const localX = x - hutchCenter.x
-    const localZ = z - hutchCenter.z
+  function resolveOneHutchWalls(hutch: HutchZone, prevX: number, prevZ: number, x: number, z: number): { x: number; z: number } {
+    const halfW = hutch.spec.w / 2
+    const halfD = hutch.spec.d / 2
+    const prevLocalX = prevX - hutch.center.x
+    const prevLocalZ = prevZ - hutch.center.z
+    const localX = x - hutch.center.x
+    const localZ = z - hutch.center.z
     const prevInside = Math.abs(prevLocalX) <= halfW && Math.abs(prevLocalZ) <= halfD
     const nextInside = Math.abs(localX) <= halfW && Math.abs(localZ) <= halfD
-    const nearDoor = inHutchDoor((prevLocalX + localX) / 2)
+    const nearDoor = inHutchDoor(hutch, (prevLocalX + localX) / 2)
     const throughDoor = nearDoor && (
       (prevLocalZ <= halfD && localZ >= halfD - PLAYER_R) ||
       (prevLocalZ >= halfD && localZ <= halfD + PLAYER_R)
@@ -1242,8 +1284,8 @@ function main() {
 
     if (prevInside) {
       return {
-        x: hutchCenter.x + THREE.MathUtils.clamp(localX, -halfW + PLAYER_R, halfW - PLAYER_R),
-        z: hutchCenter.z + THREE.MathUtils.clamp(localZ, -halfD + PLAYER_R, halfD - PLAYER_R),
+        x: hutch.center.x + THREE.MathUtils.clamp(localX, -halfW + PLAYER_R, halfW - PLAYER_R),
+        z: hutch.center.z + THREE.MathUtils.clamp(localZ, -halfD + PLAYER_R, halfD - PLAYER_R),
       }
     }
 
@@ -1254,15 +1296,15 @@ function main() {
       const dzFront = Math.abs(prevLocalZ - halfD)
       const nearest = Math.min(dxLeft, dxRight, dzBack, dzFront)
       if (nearest === dxLeft) {
-        return { x: hutchCenter.x - halfW - PLAYER_R, z }
+        return { x: hutch.center.x - halfW - PLAYER_R, z }
       }
       if (nearest === dxRight) {
-        return { x: hutchCenter.x + halfW + PLAYER_R, z }
+        return { x: hutch.center.x + halfW + PLAYER_R, z }
       }
       if (nearest === dzBack) {
-        return { x, z: hutchCenter.z - halfD - PLAYER_R }
+        return { x, z: hutch.center.z - halfD - PLAYER_R }
       }
-      return { x, z: hutchCenter.z + halfD + PLAYER_R }
+      return { x, z: hutch.center.z + halfD + PLAYER_R }
     }
 
     const overlapsHutchBand = Math.abs(localX) <= halfW + PLAYER_R && Math.abs(localZ) <= halfD + PLAYER_R
@@ -1273,20 +1315,28 @@ function main() {
       const fromFront = Math.abs(localZ - halfD)
       const nearest = Math.min(fromLeft, fromRight, fromBack, fromFront)
       if (nearest === fromLeft) {
-        return { x: hutchCenter.x - halfW - PLAYER_R, z }
+        return { x: hutch.center.x - halfW - PLAYER_R, z }
       }
       if (nearest === fromRight) {
-        return { x: hutchCenter.x + halfW + PLAYER_R, z }
+        return { x: hutch.center.x + halfW + PLAYER_R, z }
       }
       if (nearest === fromBack) {
-        return { x, z: hutchCenter.z - halfD - PLAYER_R }
+        return { x, z: hutch.center.z - halfD - PLAYER_R }
       }
-      if (!inHutchDoor(localX)) {
-        return { x, z: hutchCenter.z + halfD + PLAYER_R }
+      if (!inHutchDoor(hutch, localX)) {
+        return { x, z: hutch.center.z + halfD + PLAYER_R }
       }
     }
 
     return { x, z }
+  }
+
+  function resolveHutchWalls(prevX: number, prevZ: number, x: number, z: number): { x: number; z: number } {
+    let result = { x, z }
+    for (const hutch of hutches) {
+      result = resolveOneHutchWalls(hutch, prevX, prevZ, result.x, result.z)
+    }
+    return result
   }
 
   function isNightNow(): boolean {
@@ -1353,14 +1403,16 @@ function main() {
     ;(scene.background as THREE.Color).copy(sky)
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color.copy(fog)
-      scene.fog.near = night ? 10 : 22
-      scene.fog.far = night ? 36 : 55
+      scene.fog.near = night ? 16 : 28
+      scene.fog.far = night ? 72 : 125
     }
     hemi.intensity = hemiIntensity
     sun.intensity = sunIntensity
     sun.color.set(label === 'Skymning' || label === 'Gryning' ? 0xffc58a : 0xfffaec)
     moonLight.intensity = moonIntensity
-    glassMat.emissiveIntensity = windowPower * 1.15
+    for (const material of windowMaterials) {
+      material.emissiveIntensity = windowPower * 1.15
+    }
     for (const [i, light] of windowLights.entries()) {
       light.intensity = windowPower * (0.58 + (i % 3) * 0.08)
     }
@@ -1375,20 +1427,20 @@ function main() {
 
   function randomGardenPosition(): THREE.Vector3 {
     for (let i = 0; i < 40; i++) {
-      const x = THREE.MathUtils.randFloat(-INNER + 1.2, INNER - 1.2)
-      const z = THREE.MathUtils.randFloat(-INNER + 1.2, INNER - 1.2)
-      const nearHouse = aabb2ContainsXZ(houseAabb, x, z)
-      const nearHutch = aabb2ContainsXZ({
-        min: hutchAabb.min.clone().addScalar(-1.3),
-        max: hutchAabb.max.clone().addScalar(1.3),
-        y0: hutchAabb.y0,
-        y1: hutchAabb.y1,
-      }, x, z)
+      const x = THREE.MathUtils.randFloat(-WORLD_HALF_X + 1.2, WORLD_HALF_X - 1.2)
+      const z = THREE.MathUtils.randFloat(-WORLD_HALF_Z + 1.2, WORLD_HALF_Z - 1.2)
+      const nearHouse = colliders.some((collider) => aabb2ContainsXZ(collider, x, z))
+      const nearHutch = hutches.some((hutch) => aabb2ContainsXZ({
+        min: hutch.aabb.min.clone().addScalar(-1.3),
+        max: hutch.aabb.max.clone().addScalar(1.3),
+        y0: hutch.aabb.y0,
+        y1: hutch.aabb.y1,
+      }, x, z))
       if (!nearHouse && !nearHutch && Math.hypot(x - siggeG.position.x, z - siggeG.position.z) > 3) {
-        return new THREE.Vector3(x, 0.24, z)
+        return new THREE.Vector3(x, terrainHeightAt(x, z) + 0.24, z)
       }
     }
-    return new THREE.Vector3(0, 0.24, -10)
+    return new THREE.Vector3(0, terrainHeightAt(0, 15) + 0.24, 15)
   }
 
   function pickupLabel(kind: PickupKind): string {
@@ -1530,6 +1582,7 @@ function main() {
     const ang = Math.random() * Math.PI * 2
     const r = INNER - 1.2
     foxP.set(Math.cos(ang) * r, 0.25, Math.sin(ang) * r)
+    foxP.y = terrainHeightAt(foxP.x, foxP.z) + 0.25
     foxG.position.copy(foxP)
     foxG.visible = true
     foxMode = 'chase'
@@ -1551,6 +1604,7 @@ function main() {
     const stepLen = Math.min(dist, speed * dt)
     to.normalize()
     foxG.position.addScaledVector(to, stepLen)
+    foxG.position.y = terrainHeightAt(foxG.position.x, foxG.position.z) + 0.25
     foxG.rotation.y = Math.atan2(to.x, to.z)
     return dist - stepLen
   }
@@ -1571,7 +1625,7 @@ function main() {
     const bob = moving ? Math.abs(stride) * 0.035 : sniffing ? Math.sin(now * 8) * 0.012 : 0
     const headNod = sniffing ? Math.sin(now * 12) * 0.035 : moving ? Math.sin(foxWalkPhase + 0.5) * 0.015 : 0
 
-    foxG.position.y = 0.25 + bob
+    foxG.position.y = terrainHeightAt(foxG.position.x, foxG.position.z) + 0.25 + bob
     parts.body.position.y = parts.bodyY + bob * 0.35
     parts.chest.position.y = parts.chestY + bob * 0.45
     const biteOpen = foxBiteAnimLeft > 0
@@ -1602,21 +1656,24 @@ function main() {
   }
 
   function startFoxSniff() {
-    const side = foxG.position.clone().sub(hutchCenter)
+    const hutch = hutches.reduce((nearest, candidate) => (
+      candidate.center.distanceToSquared(foxG.position) < nearest.center.distanceToSquared(foxG.position) ? candidate : nearest
+    ))
+    const side = foxG.position.clone().sub(hutch.center)
     side.y = 0
     if (side.lengthSq() < 0.01) {
       side.set(0, 0, -1)
     }
     side.normalize()
     foxTarget.set(
-      hutchCenter.x + side.x * FOX_SNIFF_DIST,
+      hutch.center.x + side.x * FOX_SNIFF_DIST,
       0.25,
-      hutchCenter.z + side.z * FOX_SNIFF_DIST,
+      hutch.center.z + side.z * FOX_SNIFF_DIST,
     )
     foxLeaveTarget.set(
-      hutchCenter.x + side.x * (INNER + 8),
+      hutch.center.x + side.x * (INNER + 8),
       0.25,
-      hutchCenter.z + side.z * (INNER + 8),
+      hutch.center.z + side.z * (INNER + 8),
     )
     foxSniffLeft = FOX_SNIFF_TIME
     foxMode = 'sniff'
@@ -1629,6 +1686,7 @@ function main() {
     const ang = Math.random() * Math.PI * 2
     const r = INNER - 1.0
     catP.set(Math.cos(ang) * r, 0.22, Math.sin(ang) * r)
+    catP.y = terrainHeightAt(catP.x, catP.z) + 0.22
     catG.position.copy(catP)
     catG.visible = true
     catMode = 'chase'
@@ -1650,6 +1708,7 @@ function main() {
     const stepLen = Math.min(dist, speed * dt)
     to.normalize()
     catG.position.addScaledVector(to, stepLen)
+    catG.position.y = terrainHeightAt(catG.position.x, catG.position.z) + 0.22
     catG.rotation.y = Math.atan2(to.x, to.z)
     return dist - stepLen
   }
@@ -1670,7 +1729,7 @@ function main() {
     const bob = moving ? Math.abs(stride) * 0.026 : sniffing ? Math.sin(now * 9) * 0.01 : 0
     const headNod = sniffing ? Math.sin(now * 14) * 0.028 : moving ? Math.sin(catWalkPhase + 0.4) * 0.012 : 0
 
-    catG.position.y = 0.22 + bob
+    catG.position.y = terrainHeightAt(catG.position.x, catG.position.z) + 0.22 + bob
     parts.body.position.y = parts.bodyY + bob * 0.35
     parts.chest.position.y = parts.chestY + bob * 0.4
     const biteOpen = catBiteAnimLeft > 0
@@ -1701,21 +1760,24 @@ function main() {
   }
 
   function startCatSniff() {
-    const side = catG.position.clone().sub(hutchCenter)
+    const hutch = hutches.reduce((nearest, candidate) => (
+      candidate.center.distanceToSquared(catG.position) < nearest.center.distanceToSquared(catG.position) ? candidate : nearest
+    ))
+    const side = catG.position.clone().sub(hutch.center)
     side.y = 0
     if (side.lengthSq() < 0.01) {
       side.set(0, 0, -1)
     }
     side.normalize()
     catTarget.set(
-      hutchCenter.x + side.x * CAT_SNIFF_DIST,
+      hutch.center.x + side.x * CAT_SNIFF_DIST,
       0.22,
-      hutchCenter.z + side.z * CAT_SNIFF_DIST,
+      hutch.center.z + side.z * CAT_SNIFF_DIST,
     )
     catLeaveTarget.set(
-      hutchCenter.x + side.x * (INNER + 8),
+      hutch.center.x + side.x * (INNER + 8),
       0.22,
-      hutchCenter.z + side.z * (INNER + 8),
+      hutch.center.z + side.z * (INNER + 8),
     )
     catSniffLeft = CAT_SNIFF_TIME
     catMode = 'sniff'
@@ -1756,7 +1818,8 @@ function main() {
       gameOver = true
       energy = 0
       if (elGameOverDetail) {
-        elGameOverDetail.textContent = `Sigge överlevde ${survivedNights} ${survivedNights === 1 ? 'natt' : 'nätter'}.`
+        const playerName = selectedCharacter === 'sigge' ? 'Sigge' : 'Kurre'
+        elGameOverDetail.textContent = `${playerName} överlevde ${survivedNights} ${survivedNights === 1 ? 'natt' : 'nätter'}.`
       }
       elGameOverDialog?.classList.remove('gameover-dialog--hidden')
       pVel.set(0, 0, 0)
@@ -1968,26 +2031,35 @@ function main() {
   })
   window.addEventListener('blur', resetTouchControls)
 
-  elStartFullscreen?.addEventListener('click', async () => {
-    if (isMobileLike()) {
-      try {
-        if (!document.fullscreenElement) {
-          await document.documentElement.requestFullscreen()
+  for (const button of characterButtons) {
+    button.addEventListener('click', async () => {
+      selectedCharacter = button.dataset.character === 'kurre' ? 'kurre' : 'sigge'
+      setPlayerCharacter(selectedCharacter)
+      siggeG.position.copy(spawns[selectedCharacter])
+      siggeG.rotation.set(0, 0, 0)
+      if (elPlayerName) {
+        elPlayerName.textContent = selectedCharacter === 'sigge' ? 'Sigge' : 'Kurre'
+      }
+      if (isMobileLike()) {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen()
+          }
+        } catch {
+          // Fullscreen is best-effort; browsers may reject it.
         }
-      } catch {
-        // Fullscreen is best-effort; browsers may reject it.
+        try {
+          await (screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> }).lock?.('landscape')
+        } catch {
+          // Orientation lock is also best-effort, especially on iOS.
+        }
       }
-      try {
-        await (screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> }).lock?.('landscape')
-      } catch {
-        // Orientation lock is also best-effort, especially on iOS.
-      }
-    }
-    titleStarted = true
-    mobileStarted = true
-    last = performance.now() / 1000
-    updateMobileOverlays()
-  })
+      titleStarted = true
+      mobileStarted = true
+      last = performance.now() / 1000
+      updateMobileOverlays()
+    })
+  }
 
   let last = performance.now() / 1000
 
@@ -2047,7 +2119,7 @@ function main() {
     pickupSpawnNext = 7
     pickupMessageLeft = 0
     pVel.set(0, 0, 0)
-    siggeG.position.set(0, PLAYER_H, 0)
+    siggeG.position.copy(spawns[selectedCharacter])
     siggeG.rotation.set(0, 0, 0)
     siggeVisual.position.set(0, 0, 0)
     siggeArmor.visible = false
@@ -2177,25 +2249,27 @@ function main() {
     }
     touchJumpQueued = false
     let nx = siggeG.position.x + pVel.x
-    let ny = Math.max(0, siggeG.position.y + pVel.y * dt)
+    let ny = siggeG.position.y + pVel.y * dt
     let nz = siggeG.position.z + pVel.z
 
     nx = THREE.MathUtils.clamp(nx, -INNER + PLAYER_R, INNER - PLAYER_R)
-    nz = THREE.MathUtils.clamp(nz, -INNER + PLAYER_R, INNER - PLAYER_R)
+    nz = THREE.MathUtils.clamp(nz, -WORLD_HALF_Z + PLAYER_R, WORLD_HALF_Z - PLAYER_R)
 
     const prevX = siggeG.position.x
     const prevZ = siggeG.position.z
-    const hOut = resolveCircleAabb2(
-      houseAabb.min.x,
-      houseAabb.min.y,
-      houseAabb.max.x,
-      houseAabb.max.y,
-      nx,
-      nz,
-      PLAYER_R,
-    )
-    nx = hOut.x
-    nz = hOut.z
+    for (const collider of colliders) {
+      const out = resolveCircleAabb2(
+        collider.min.x,
+        collider.min.y,
+        collider.max.x,
+        collider.max.y,
+        nx,
+        nz,
+        PLAYER_R,
+      )
+      nx = out.x
+      nz = out.z
+    }
 
     const hutchOut = resolveHutchWalls(prevX, prevZ, nx, nz)
     nx = hutchOut.x
@@ -2262,7 +2336,7 @@ function main() {
         )
         foxMoving = moveFoxToward(foxTarget, FOX_SPD * (0.9 + (100 - energy) * 0.00035), dt) > 0.08
         foxG.position.x = THREE.MathUtils.clamp(foxG.position.x, -INNER + 0.4, INNER - 0.4)
-        foxG.position.z = THREE.MathUtils.clamp(foxG.position.z, -INNER + 0.4, INNER - 0.4)
+        foxG.position.z = THREE.MathUtils.clamp(foxG.position.z, -WORLD_HALF_Z + 0.4, WORLD_HALF_Z - 0.4)
         foxG.rotation.y = Math.atan2(siggeG.position.x - foxG.position.x, siggeG.position.z - foxG.position.z)
         if (
           foxBiteCooldown <= 0 &&
@@ -2287,7 +2361,7 @@ function main() {
     } else if (foxMode === 'leave') {
       const remaining = moveFoxToward(foxLeaveTarget, FOX_SPD * 0.8, dt)
       foxMoving = true
-      if (remaining < 0.2 || Math.abs(foxG.position.x) > INNER || Math.abs(foxG.position.z) > INNER) {
+      if (remaining < 0.2 || Math.abs(foxG.position.x) > INNER || Math.abs(foxG.position.z) > WORLD_HALF_Z) {
         hideFox()
       }
     }
@@ -2312,7 +2386,7 @@ function main() {
         )
         catMoving = moveCatToward(catTarget, CAT_SPD * (isNightNow() ? 1.08 : 0.92), dt) > 0.07
         catG.position.x = THREE.MathUtils.clamp(catG.position.x, -INNER + 0.35, INNER - 0.35)
-        catG.position.z = THREE.MathUtils.clamp(catG.position.z, -INNER + 0.35, INNER - 0.35)
+        catG.position.z = THREE.MathUtils.clamp(catG.position.z, -WORLD_HALF_Z + 0.35, WORLD_HALF_Z - 0.35)
         catG.rotation.y = Math.atan2(siggeG.position.x - catG.position.x, siggeG.position.z - catG.position.z)
         if (
           catBiteCooldown <= 0 &&
@@ -2337,7 +2411,7 @@ function main() {
     } else if (catMode === 'leave') {
       const remaining = moveCatToward(catLeaveTarget, CAT_SPD * 0.85, dt)
       catMoving = true
-      if (remaining < 0.2 || Math.abs(catG.position.x) > INNER || Math.abs(catG.position.z) > INNER) {
+      if (remaining < 0.2 || Math.abs(catG.position.x) > INNER || Math.abs(catG.position.z) > WORLD_HALF_Z) {
         hideCat()
       }
     }

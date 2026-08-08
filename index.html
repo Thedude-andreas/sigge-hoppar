@@ -13,9 +13,9 @@
   <body>
     <div id="app">
       <div id="hud" aria-hidden="true">
-        <p id="hud-title">99 nätter på kronan</p>
+        <p id="hud-title">99 nätter på kronan · <span id="player-name">Sigge</span></p>
         <p id="hud-hint">Piltangenter/WASD eller touchkontroller · mellanrum hoppar</p>
-        <p id="hud-rev" class="hud-rev">Kod: natter-katt-gear+12</p>
+        <p id="hud-rev" class="hud-rev">Kod: kronan-karta-kaninval+13</p>
         <div id="survival-wrap">
           <span>Nätter: <strong id="night-count">0</strong></span>
           <span id="cycle-state">Gryning</span>
@@ -42,8 +42,19 @@
       <div id="start-screen" class="mobile-overlay mobile-overlay--hidden">
         <div class="mobile-panel">
           <p class="mobile-panel-title">99 nätter på kronan</p>
-          <p>Överlev så många nätter som möjligt.</p>
-          <button id="start-fullscreen" type="button">Starta spelet</button>
+          <p>Vem ska försöka överleva 99 nätter?</p>
+          <div class="character-grid" role="group" aria-label="Välj kanin">
+            <button class="character-card character-card--sigge" type="button" data-character="sigge">
+              <span class="rabbit-preview" aria-hidden="true"><span class="rabbit-ear rabbit-ear--left"></span><span class="rabbit-ear rabbit-ear--right"></span><span class="rabbit-face"></span></span>
+              <strong>Sigge</strong>
+              <small>Beige dvärgvädur · röda huset</small>
+            </button>
+            <button class="character-card character-card--kurre" type="button" data-character="kurre">
+              <span class="rabbit-preview" aria-hidden="true"><span class="rabbit-ear rabbit-ear--left"></span><span class="rabbit-ear rabbit-ear--right"></span><span class="rabbit-face"></span></span>
+              <strong>Kurre</strong>
+              <small>Mörkbrun dvärgvädur · vita huset</small>
+            </button>
+          </div>
         </div>
       </div>
       <div id="rotate-screen" class="mobile-overlay mobile-overlay--hidden">
@@ -55,7 +66,7 @@
       <div id="gameover-dialog" class="gameover-dialog--hidden" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
         <div class="gameover-panel">
           <p id="gameover-title">Game over</p>
-          <p id="gameover-detail">Sigge behöver mer energi.</p>
+          <p id="gameover-detail">Kaninen behöver mer energi.</p>
           <button id="restart-game" type="button">Starta om</button>
         </div>
       </div>
