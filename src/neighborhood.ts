@@ -292,7 +292,13 @@ function addWhiteHouse(scene: THREE.Scene, colliders: Box3XZ[], windowLights: TH
   g.position.set(x, ground, z)
   g.rotation.y = Math.PI / 2
   scene.add(g)
-  colliders.push({ min: new THREE.Vector2(x - (d + porchD) / 2 - 0.25, z - w / 2 - 0.25), max: new THREE.Vector2(x + (d + porchD) / 2 + 0.25, z + w / 2 + 0.25), y0: ground, y1: ground + 7.2 })
+  // Efter 90° rotation ligger verandan på husets östra sida och gör kollideraren asymmetrisk.
+  colliders.push({
+    min: new THREE.Vector2(x - d / 2 - 0.25, z - w / 2 - 0.25),
+    max: new THREE.Vector2(x + d / 2 + porchD + 0.25, z + w / 2 + 0.25),
+    y0: ground,
+    y1: ground + 7.2,
+  })
 
   // Fristående garage på höger sida, som på fasadbilden och ortofotot.
   const [garageX, garageZ] = orthoPoint([407, 1110])
@@ -507,7 +513,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   // Friggebodar och uthus.
   addMappedOutbuilding([314, 580], 36, 31, 0xd7d1c1)
   // Ytan vid [492, 535] är morotslandet på röda gården, inte ett uthus.
-  addMappedOutbuilding([335, 872], 34, 29, 0x777d7b)
+  // Objektet vid [335, 872] är Kurres bur och ritas separat nedan, inte som uthus.
   addMappedOutbuilding([475, 935], 38, 34, 0x8f928c)
   addMappedOutbuilding([78, 1000], 42, 34, 0xa8a8a0)
   addMappedOutbuilding([625, 438], 36, 31, 0x5e6261)
@@ -546,7 +552,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
       // Röda gården, öster om uteplatsen.
       new THREE.Vector2(...orthoPoint([492, 535])),
       // Vita gården, på den fria remsan mellan huset och den östra häcken.
-      new THREE.Vector2(...orthoPoint([462, 1015])),
+      new THREE.Vector2(...orthoPoint([470, 1015])),
     ],
     windowLights,
     windowMaterials,
