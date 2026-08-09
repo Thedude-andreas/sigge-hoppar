@@ -1348,6 +1348,9 @@ function main() {
   const elItems = document.getElementById('item-status') as HTMLSpanElement | null
   const elRiskChallenge = document.getElementById('risk-challenge') as HTMLParagraphElement | null
   const elRiskBonus = document.getElementById('risk-bonus') as HTMLSpanElement | null
+  const elRiskPointer = document.getElementById('risk-pointer') as HTMLDivElement | null
+  const elRiskPointerArrow = document.getElementById('risk-pointer-arrow') as HTMLSpanElement | null
+  const elRiskPointerDistance = document.getElementById('risk-pointer-distance') as HTMLSpanElement | null
   const elPickup = document.getElementById('hud-pickup') as HTMLParagraphElement | null
   const elFox = document.getElementById('hud-fox') as HTMLParagraphElement | null
   const elSafe = document.getElementById('hud-safe') as HTMLParagraphElement | null
@@ -1492,6 +1495,7 @@ function main() {
   const cameraBack = new THREE.Vector3()
   const cameraPosition = new THREE.Vector3()
   const cameraTarget = new THREE.Vector3()
+  const riskPointerTarget = new THREE.Vector3()
   const pickups: Pickup[] = []
   const skyDay = new THREE.Color(0x6eb8d4)
   const skyTwilight = new THREE.Color(0xf5a06c)
@@ -1734,6 +1738,87 @@ function main() {
       distance = Math.min(distance, Math.hypot(catG.position.x - siggeG.position.x, catG.position.z - siggeG.position.z))
     }
     return distance
+  }
+
+  function getRiskPointerTarget(target: THREE.Vector3): boolean {
+    if (!titleStarted || gameOver || !activeRiskChallenge) {
+      return false
+    }
+    if (activeRiskChallenge === 'night-dandelion') {
+      target.copy(riskDandelion.position)
+      return true
+    }
+    if (activeRiskChallenge === 'fox-jump') {
+      if (foxMode !== 'chase') {
+        return false
+      }
+      target.copy(foxG.position)
+      return true
+    }
+
+    let closestDistanceSq = Number.POSITIVE_INFINITY
+    let found = false
+    if (foxMode === 'chase') {
+      closestDistanceSq = foxG.position.distanceToSquared(siggeG.position)
+      target.copy(foxG.position)
+      found = true
+    }
+    if (catMode === 'chase') {
+      const catDistanceSq = catG.position.distanceToSquared(siggeG.position)
+      if (catDistanceSq < closestDistanceSq) {
+        target.copy(catG.position)
+      }
+      found = true
+    }
+    return found
+  }
+
+  function updateRiskPointer(): void {
+    if (!elRiskPointer || !elRiskPointerArrow || !elRiskPointerDistance || !getRiskPointerTarget(riskPointerTarget)) {
+      elRiskPointer?.classList.add('risk-pointer--hidden')
+      return
+    }
+
+    const dx = riskPointerTarget.x - siggeG.position.x
+    const dz = riskPointerTarget.z - siggeG.position.z
+    const distance = Math.hypot(dx, dz)
+    if (distance < 0.2) {
+      elRiskPointer.classList.add('risk-pointer--hidden')
+      return
+    }
+
+    const worldAngle = Math.atan2(dx, dz)
+    const relativeAngle = Math.atan2(Math.sin(worldAngle - cameraYaw), Math.cos(worldAngle - cameraYaw))
+    const directionX = Math.sin(relativeAngle)
+    const directionY = -Math.cos(relativeAngle)
+
+    const width = window.innerWidth
+    const height = window.innerHeight
+    const horizontalInset = Math.min(62, Math.max(46, width * 0.06))
+    const topInset = Math.min(128, Math.max(horizontalInset, height * 0.22))
+    const leftEdge = horizontalInset
+    const rightEdge = width - horizontalInset
+    const topEdge = topInset
+    const bottomEdge = height - horizontalInset
+    const centerX = width * 0.5
+    const centerY = height * 0.5
+    const scaleX = directionX > 0.0001
+      ? (rightEdge - centerX) / directionX
+      : directionX < -0.0001
+        ? (leftEdge - centerX) / directionX
+        : Number.POSITIVE_INFINITY
+    const scaleY = directionY > 0.0001
+      ? (bottomEdge - centerY) / directionY
+      : directionY < -0.0001
+        ? (topEdge - centerY) / directionY
+        : Number.POSITIVE_INFINITY
+    const edgeScale = Math.min(scaleX, scaleY)
+
+    elRiskPointer.style.setProperty('--risk-pointer-x', `${centerX + directionX * edgeScale}px`)
+    elRiskPointer.style.setProperty('--risk-pointer-y', `${centerY + directionY * edgeScale}px`)
+    elRiskPointerArrow.style.setProperty('--risk-pointer-angle', `${relativeAngle - Math.PI / 2}rad`)
+    elRiskPointerDistance.textContent = `${Math.max(1, Math.ceil(distance))} m`
+    elRiskPointer.classList.remove('risk-pointer--hidden')
   }
 
   function updateRiskHud(): void {
@@ -3014,6 +3099,7 @@ function main() {
     }
     renderCharacterPreviews(characterPreviews, now)
     if (mobileBlocked()) {
+      elRiskPointer?.classList.add('risk-pointer--hidden')
       renderer.render(scene, camera)
       return
     }
@@ -3320,6 +3406,7 @@ function main() {
     cameraTarget.set(siggeG.position.x, siggeG.position.y + 0.3, siggeG.position.z)
     camera.lookAt(cameraTarget)
     updateNpcGreeting(dt)
+    updateRiskPointer()
 
     if (elEnergy) {
       elEnergy.style.width = `${(energy / ENERGY_MAX) * 100}%`

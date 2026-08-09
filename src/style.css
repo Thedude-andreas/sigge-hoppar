@@ -104,6 +104,48 @@ canvas {
   color: #ffd45d;
 }
 
+#risk-pointer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 4.5rem;
+  padding: 0.34rem 0.52rem;
+  border: 1px solid rgba(255, 224, 112, 0.72);
+  border-radius: 999px;
+  background: rgba(45, 28, 3, 0.86);
+  color: #fff0a8;
+  font: 800 0.8rem/1 'Segoe UI', system-ui, sans-serif;
+  text-shadow: 0 1px 3px #000b;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+  transform: translate3d(var(--risk-pointer-x, -100px), var(--risk-pointer-y, -100px), 0) translate(-50%, -50%);
+  will-change: transform;
+}
+
+#risk-pointer.risk-pointer--hidden {
+  display: none;
+}
+
+#risk-pointer-arrow {
+  display: block;
+  color: #ffd34f;
+  font-size: 1.28rem;
+  line-height: 0.8;
+  transform: rotate(var(--risk-pointer-angle, 0rad));
+  transform-origin: center;
+}
+
+#risk-pointer-distance {
+  min-width: 2.25rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
 #energy-wrap span {
   display: block;
   margin-bottom: 0.15rem;
