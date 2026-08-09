@@ -6,6 +6,7 @@ export class AudioDirector {
   private danger = false
   private nextFootstepAt = 0
   private nextRustleAt = 0
+  private noiseBuffer: AudioBuffer | null = null
 
   start() {
     if (!this.context) {
@@ -15,6 +16,7 @@ export class AudioDirector {
       this.master = this.context.createGain()
       this.master.gain.value = 0.34
       this.master.connect(this.context.destination)
+      this.noiseBuffer = this.createNoiseBuffer(this.context)
       this.nextMusicAt = this.context.currentTime + 0.04
     }
     if (this.context.state === 'suspended') {
@@ -133,13 +135,8 @@ export class AudioDirector {
   private noiseBurst(at: number, duration: number, centerFrequency: number, volume: number) {
     const ctx = this.context
     if (!ctx || !this.master) return
-    const frameCount = Math.ceil(ctx.sampleRate * duration)
-    const buffer = ctx.createBuffer(1, frameCount, ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    for (let i = 0; i < frameCount; i++) {
-      const fade = 1 - i / frameCount
-      data[i] = (Math.random() * 2 - 1) * fade
-    }
+    const buffer = this.noiseBuffer ?? this.createNoiseBuffer(ctx)
+    this.noiseBuffer = buffer
     const source = ctx.createBufferSource()
     const filter = ctx.createBiquadFilter()
     const gain = ctx.createGain()
@@ -150,7 +147,17 @@ export class AudioDirector {
     gain.gain.setValueAtTime(volume, at)
     gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
     source.connect(filter).connect(gain).connect(this.master)
-    source.start(at)
+    const maxOffset = Math.max(0, buffer.duration - duration)
+    source.start(at, Math.random() * maxOffset, duration)
+  }
+
+  private createNoiseBuffer(ctx: AudioContext) {
+    const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.random() * 2 - 1
+    }
+    return buffer
   }
 
 }

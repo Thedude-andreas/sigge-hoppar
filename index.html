@@ -15,7 +15,7 @@
       <div id="hud" aria-hidden="true">
         <p id="hud-title">99 nätter på kronan · <span id="player-name">Sigge</span></p>
         <p id="hud-hint">Piltangenter/WASD eller touchkontroller · mellanrum hoppar</p>
-        <p id="hud-rev" class="hud-rev">Kod: nomnom-kaninprat+24</p>
+        <p id="hud-rev" class="hud-rev">Kod: highscore+26</p>
         <div id="survival-wrap">
           <span>Nätter: <strong id="night-count">0</strong></span>
           <span id="cycle-state">Gryning</span>
@@ -68,6 +68,18 @@
         <div class="gameover-panel">
           <p id="gameover-title">Game over</p>
           <p id="gameover-detail">Kaninen behöver mer energi.</p>
+          <form id="highscore-form" class="highscore-form">
+            <label for="highscore-name">Ditt namn</label>
+            <div class="highscore-form-row">
+              <input id="highscore-name" name="name" type="text" maxlength="20" autocomplete="nickname" required />
+              <button id="highscore-submit" type="submit">Spara</button>
+            </div>
+          </form>
+          <p id="highscore-status" class="highscore-status" role="status" aria-live="polite">Läser topplistan…</p>
+          <section class="highscore-board" aria-labelledby="highscore-heading">
+            <h2 id="highscore-heading">Topplista</h2>
+            <ol id="highscore-list" class="highscore-list"></ol>
+          </section>
           <button id="restart-game" type="button">Starta om</button>
         </div>
       </div>

@@ -1,6 +1,8 @@
 import './style.css'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { AudioDirector } from './audio'
+import { fetchHighscores, sanitizeHighscoreName, saveHighscore, type HighscoreEntry, type HighscoreSource } from './highscores'
 import { BUILD_TAG } from './version'
 import { buildNeighborhood, terrainHeightAt, WORLD_HALF_X, WORLD_HALF_Z, type HedgeZone, type HutchZone } from './neighborhood'
 
@@ -57,6 +59,32 @@ const PICKUP_SPAWN_MAX = 17
 const ARMOR_MAX = 4
 const SPEED_POTION_SECONDS = 16
 const SHIELD_POTION_SECONDS = 12
+
+type RenderProfile = {
+  antialias: boolean
+  initialPixelRatio: number
+  minPixelRatio: number
+  maxPixelRatio: number
+}
+
+function detectRenderProfile(): RenderProfile {
+  const navigatorWithMemory = navigator as Navigator & { deviceMemory?: number }
+  const touchDevice = navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches
+  const memory = navigatorWithMemory.deviceMemory ?? (touchDevice ? 4 : 8)
+  const cores = navigator.hardwareConcurrency || (touchDevice ? 4 : 8)
+  const constrained = memory <= 4 || cores <= 4
+  const devicePixelRatio = window.devicePixelRatio || 1
+  const cap = constrained ? 1 : touchDevice ? 1.25 : 1.75
+  const maxPixelRatio = Math.min(devicePixelRatio, cap)
+  const floor = constrained ? 0.75 : touchDevice ? 0.85 : 1
+
+  return {
+    antialias: !touchDevice && !constrained,
+    initialPixelRatio: maxPixelRatio,
+    minPixelRatio: Math.min(maxPixelRatio, floor),
+    maxPixelRatio,
+  }
+}
 
 /* --- AABB (Vector2: x, z) --- */
 type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
@@ -332,9 +360,10 @@ type CharacterPreview = {
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
   rabbit: RabbitModel
+  pixelRatio: number
 }
 
-function setupCharacterPreviews(): CharacterPreview[] {
+function setupCharacterPreviews(profile: RenderProfile): CharacterPreview[] {
   return Array.from(document.querySelectorAll<HTMLCanvasElement>('[data-character-preview]')).map((canvas) => {
     const character: CharacterId = canvas.dataset.characterPreview === 'kurre' ? 'kurre' : 'sigge'
     const scene = new THREE.Scene()
@@ -349,11 +378,12 @@ function setupCharacterPreviews(): CharacterPreview[] {
     rabbit.root.scale.setScalar(1.55)
     rabbit.root.position.y = -0.08
     scene.add(rabbit.root)
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: profile.antialias, alpha: true })
+    const pixelRatio = Math.min(profile.initialPixelRatio, 1.25)
     renderer.setClearColor(0x000000, 0)
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    return { canvas, renderer, scene, camera, rabbit }
+    renderer.setPixelRatio(pixelRatio)
+    return { canvas, renderer, scene, camera, rabbit, pixelRatio }
   })
 }
 
@@ -365,7 +395,7 @@ function renderCharacterPreviews(previews: CharacterPreview[], now: number) {
     }
     const width = Math.max(1, Math.round(preview.canvas.clientWidth))
     const height = Math.max(1, Math.round(preview.canvas.clientHeight))
-    if (preview.canvas.width !== Math.round(width * Math.min(window.devicePixelRatio, 2)) || preview.canvas.height !== Math.round(height * Math.min(window.devicePixelRatio, 2))) {
+    if (preview.canvas.width !== Math.round(width * preview.pixelRatio) || preview.canvas.height !== Math.round(height * preview.pixelRatio)) {
       preview.renderer.setSize(width, height, false)
       preview.camera.aspect = width / height
       preview.camera.updateProjectionMatrix()
@@ -865,31 +895,68 @@ function buildScene() {
 
   // Carrots
   const carrots: CarrotPlant[] = []
-  const carrotMat = new THREE.MeshStandardMaterial({ color: 0xe9781d, emissive: 0x1f0a00, roughness: 0.72 })
-  const carrotTopMat = new THREE.MeshStandardMaterial({ color: 0xf28a24, roughness: 0.68 })
-  const stemMat = new THREE.MeshStandardMaterial({ color: 0x286f22, roughness: 0.75 })
+  const carrotMaterial = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    emissive: 0x100400,
+    emissiveIntensity: 0.22,
+    roughness: 0.75,
+  })
+  const coloredCarrotGeometry = (
+    geometry: THREE.BufferGeometry,
+    color: THREE.ColorRepresentation,
+    position: THREE.Vector3,
+    rotation = new THREE.Euler(),
+  ) => {
+    const transform = new THREE.Matrix4().compose(
+      position,
+      new THREE.Quaternion().setFromEuler(rotation),
+      new THREE.Vector3(1, 1, 1),
+    )
+    geometry.applyMatrix4(transform)
+    const rgb = new THREE.Color(color)
+    const colors = new Float32Array(geometry.getAttribute('position').count * 3)
+    for (let i = 0; i < colors.length; i += 3) {
+      colors[i] = rgb.r
+      colors[i + 1] = rgb.g
+      colors[i + 2] = rgb.b
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    return geometry
+  }
+  const carrotEdibleGeometry = mergeGeometries([
+    coloredCarrotGeometry(
+      new THREE.CylinderGeometry(0.08, 0.18, 0.24, 12),
+      0xf28a24,
+      new THREE.Vector3(0, 0.18, 0),
+    ),
+    coloredCarrotGeometry(
+      new THREE.ConeGeometry(0.105, 0.34, 12),
+      0xe9781d,
+      new THREE.Vector3(0, 0.13, 0),
+      new THREE.Euler(Math.PI, 0, 0),
+    ),
+  ])
+  const carrotGreenParts = Array.from({ length: 7 }, (_, i) => {
+    const angle = (i / 7) * Math.PI * 2
+    const tilt = 0.35 + (i % 2) * 0.18
+    return coloredCarrotGeometry(
+      new THREE.ConeGeometry(0.025, 0.44 + (i % 3) * 0.07, 5),
+      0x286f22,
+      new THREE.Vector3(Math.cos(angle) * 0.045, 0.43, Math.sin(angle) * 0.045),
+      new THREE.Euler(Math.sin(angle) * tilt, angle, -Math.cos(angle) * tilt),
+    )
+  })
+  const carrotGreensGeometry = mergeGeometries(carrotGreenParts)
+  if (!carrotEdibleGeometry || !carrotGreensGeometry) {
+    throw new Error('Could not merge carrot geometry')
+  }
   const makeCarrot = (lean: number): CarrotPlant => {
     const root = new THREE.Group()
     const edible = new THREE.Group()
     const greens = new THREE.Group()
-
-    const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.18, 0.24, 12), carrotTopMat)
-    shoulder.position.y = 0.18
-    edible.add(shoulder)
-
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.105, 0.34, 12), carrotMat)
-    tip.rotation.x = Math.PI
-    tip.position.y = 0.13
-    edible.add(tip)
-
-    for (let i = 0; i < 7; i++) {
-      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.44 + (i % 3) * 0.07, 5), stemMat)
-      const angle = (i / 7) * Math.PI * 2 + lean
-      const tilt = 0.35 + (i % 2) * 0.18
-      blade.position.set(Math.cos(angle) * 0.045, 0.43, Math.sin(angle) * 0.045)
-      blade.rotation.set(Math.sin(angle) * tilt, angle, -Math.cos(angle) * tilt)
-      greens.add(blade)
-    }
+    edible.add(new THREE.Mesh(carrotEdibleGeometry, carrotMaterial))
+    greens.add(new THREE.Mesh(carrotGreensGeometry, carrotMaterial))
+    greens.rotation.y = lean
 
     root.add(edible, greens)
     const plant = {
@@ -1202,7 +1269,6 @@ function buildScene() {
     moonLight,
     sunOrb,
     moonOrb,
-    windowLights: neighborhood.windowLights,
     windowMaterials: neighborhood.windowMaterials,
     colliders: neighborhood.colliders,
     platforms: neighborhood.platforms,
@@ -1214,6 +1280,7 @@ function buildScene() {
 
 function main() {
   const root = document.getElementById('app')!
+  const renderProfile = detectRenderProfile()
   // HUD: läs in efter att DOM:en finns; index.html ersätts i bygget med rätt "Kod:" redan
   const elEnergy = document.getElementById('energy-bar') as HTMLDivElement | null
   const elNightCount = document.getElementById('night-count') as HTMLSpanElement | null
@@ -1225,6 +1292,11 @@ function main() {
   const elGameOver = document.getElementById('hud-gameover') as HTMLParagraphElement | null
   const elGameOverDialog = document.getElementById('gameover-dialog') as HTMLDivElement | null
   const elGameOverDetail = document.getElementById('gameover-detail') as HTMLParagraphElement | null
+  const elHighscoreForm = document.getElementById('highscore-form') as HTMLFormElement | null
+  const elHighscoreName = document.getElementById('highscore-name') as HTMLInputElement | null
+  const elHighscoreSubmit = document.getElementById('highscore-submit') as HTMLButtonElement | null
+  const elHighscoreStatus = document.getElementById('highscore-status') as HTMLParagraphElement | null
+  const elHighscoreList = document.getElementById('highscore-list') as HTMLOListElement | null
   const elRestart = document.getElementById('restart-game') as HTMLButtonElement | null
   const elMoveZone = document.getElementById('move-zone') as HTMLDivElement | null
   const elMoveStick = document.getElementById('move-stick') as HTMLDivElement | null
@@ -1235,7 +1307,7 @@ function main() {
   const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
   const elNpcSpeech = document.getElementById('npc-speech') as HTMLDivElement | null
   const characterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-character]'))
-  const characterPreviews = setupCharacterPreviews()
+  const characterPreviews = setupCharacterPreviews(renderProfile)
   const elPlayerName = document.getElementById('player-name') as HTMLSpanElement | null
   const rev = document.getElementById('hud-rev')
   if (rev) {
@@ -1257,7 +1329,6 @@ function main() {
     moonLight,
     sunOrb,
     moonOrb,
-    windowLights,
     windowMaterials,
     colliders,
     platforms,
@@ -1268,10 +1339,11 @@ function main() {
   const audio = new AudioDirector()
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200)
-  const renderer = new THREE.WebGLRenderer({ antialias: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  let rendererPixelRatio = renderProfile.initialPixelRatio
+  const renderer = new THREE.WebGLRenderer({ antialias: renderProfile.antialias, powerPreference: 'high-performance' })
+  renderer.setPixelRatio(rendererPixelRatio)
   renderer.outputColorSpace = THREE.SRGBColorSpace
-  renderer.shadowMap.enabled = true
+  renderer.shadowMap.enabled = false
   root.appendChild(renderer.domElement)
 
   const keys: Record<string, boolean> = {}
@@ -1332,13 +1404,24 @@ function main() {
   let mobileStarted = !isMobileLike()
   let titleStarted = false
   let selectedCharacter: CharacterId = 'sigge'
+  let finishedRun: { nights: number; rabbit: CharacterId } | null = null
+  let submittedHighscoreId: string | null = null
+  let highscoreViewGeneration = 0
   let npcGreetingLeft = 0
   let npcGreetingArmed = true
   const npcSpeechPosition = new THREE.Vector3()
   const foxTarget = new THREE.Vector3()
   const foxLeaveTarget = new THREE.Vector3()
+  const foxMoveDelta = new THREE.Vector3()
+  const foxToPlayer = new THREE.Vector3()
   const catTarget = new THREE.Vector3()
   const catLeaveTarget = new THREE.Vector3()
+  const catMoveDelta = new THREE.Vector3()
+  const catToPlayer = new THREE.Vector3()
+  const cameraForward = new THREE.Vector3()
+  const cameraBack = new THREE.Vector3()
+  const cameraPosition = new THREE.Vector3()
+  const cameraTarget = new THREE.Vector3()
   const pickups: Pickup[] = []
   const skyDay = new THREE.Color(0x6eb8d4)
   const skyTwilight = new THREE.Color(0xf5a06c)
@@ -1346,6 +1429,8 @@ function main() {
   const fogDay = new THREE.Color(0x8ec8e0)
   const fogTwilight = new THREE.Color(0xf0a178)
   const fogNight = new THREE.Color(0x090d1a)
+  const currentSky = new THREE.Color()
+  const currentFog = new THREE.Color()
 
   function isMobileLike(): boolean {
     return navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches
@@ -1561,8 +1646,8 @@ function main() {
     }
     wasNight = night
 
-    let sky = skyDay.clone()
-    let fog = fogDay.clone()
+    const sky = currentSky.copy(skyDay)
+    const fog = currentFog.copy(fogDay)
     let sunIntensity = 1
     let moonIntensity = 0
     let hemiIntensity = 0.85
@@ -1575,8 +1660,8 @@ function main() {
       const dawn = 1 - THREE.MathUtils.clamp(cycleClock / TWILIGHT_SECONDS, 0, 1)
       const dusk = THREE.MathUtils.clamp((cycleClock - (DAY_SECONDS - TWILIGHT_SECONDS)) / TWILIGHT_SECONDS, 0, 1)
       const twilight = Math.max(dawn, dusk)
-      sky = skyDay.clone().lerp(skyTwilight, twilight * 0.92)
-      fog = fogDay.clone().lerp(fogTwilight, twilight * 0.85)
+      sky.copy(skyDay).lerp(skyTwilight, twilight * 0.92)
+      fog.copy(fogDay).lerp(fogTwilight, twilight * 0.85)
       sunIntensity = THREE.MathUtils.lerp(0.34, 1.08, sunHeight) * (1 - dusk * 0.35)
       hemiIntensity = THREE.MathUtils.lerp(0.48, 0.9, sunHeight) * (1 - dusk * 0.18)
       windowPower = Math.max(dusk * 0.4, dawn * 0.18)
@@ -1591,8 +1676,8 @@ function main() {
     } else {
       const nightT = THREE.MathUtils.clamp((cycleClock - DAY_SECONDS) / NIGHT_SECONDS, 0, 1)
       const nightRise = THREE.MathUtils.clamp((cycleClock - DAY_SECONDS) / 4, 0, 1)
-      sky = skyTwilight.clone().lerp(skyNight, nightRise)
-      fog = fogTwilight.clone().lerp(fogNight, nightRise)
+      sky.copy(skyTwilight).lerp(skyNight, nightRise)
+      fog.copy(fogTwilight).lerp(fogNight, nightRise)
       sunIntensity = 0
       moonIntensity = 0.24 + Math.sin(nightT * Math.PI) * 0.16
       hemiIntensity = 0.08
@@ -1619,9 +1704,6 @@ function main() {
     moonLight.intensity = moonIntensity
     for (const material of windowMaterials) {
       material.emissiveIntensity = windowPower * 1.15
-    }
-    for (const [i, light] of windowLights.entries()) {
-      light.intensity = windowPower * (0.58 + (i % 3) * 0.08)
     }
     if (elCycle) {
       const left = night ? CYCLE_SECONDS - cycleClock : DAY_SECONDS - cycleClock
@@ -1669,15 +1751,13 @@ function main() {
   function createPickupGroup(kind: PickupKind) {
     const g = new THREE.Group()
     g.userData.baseY = 0.24
-    const glow = new THREE.PointLight(0xffffff, 0.28, 3.6, 2)
-    glow.position.y = 0.45
 
     if (kind === 'light-armor' || kind === 'heavy-armor') {
       const heavy = kind === 'heavy-armor'
       const armorMat = new THREE.MeshStandardMaterial({
         color: heavy ? 0x657286 : 0xa8b6c6,
         emissive: heavy ? 0x10172a : 0x0c151d,
-        emissiveIntensity: 0.18,
+        emissiveIntensity: 0.35,
         metalness: 0.55,
         roughness: 0.3,
       })
@@ -1686,8 +1766,7 @@ function main() {
       plate.position.y = 0.34
       const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.06), armorMat)
       band.position.y = 0.34
-      glow.color.set(heavy ? 0x9cb7ff : 0xd8ecff)
-      g.add(plate, band, glow)
+      g.add(plate, band)
     } else {
       const potionColor = kind === 'energy-potion' ? 0xff5964 : kind === 'speed-potion' ? 0x4fc3ff : 0xb487ff
       const potionMat = new THREE.MeshStandardMaterial({
@@ -1703,8 +1782,7 @@ function main() {
       stopper.position.y = 0.52
       const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), potionMat)
       bubble.position.y = 0.16
-      glow.color.set(potionColor)
-      g.add(glassBottle, stopper, bubble, glow)
+      g.add(glassBottle, stopper, bubble)
     }
 
     return g
@@ -1802,7 +1880,7 @@ function main() {
   }
 
   function moveFoxToward(target: THREE.Vector3, speed: number, dt: number): number {
-    const to = target.clone().sub(foxG.position)
+    const to = foxMoveDelta.copy(target).sub(foxG.position)
     to.y = 0
     const dist = to.length()
     if (dist < 0.01) {
@@ -1902,7 +1980,7 @@ function main() {
   }
 
   function moveCatToward(target: THREE.Vector3, speed: number, dt: number): number {
-    const to = target.clone().sub(catG.position)
+    const to = catMoveDelta.copy(target).sub(catG.position)
     to.y = 0
     const dist = to.length()
     if (dist < 0.01) {
@@ -2009,6 +2087,142 @@ function main() {
     }
   }
 
+  function createRabbitIcon(rabbit: CharacterId): HTMLSpanElement {
+    const icon = document.createElement('span')
+    icon.className = `rabbit-icon rabbit-icon--${rabbit}`
+    icon.setAttribute('role', 'img')
+    icon.setAttribute('aria-label', rabbit === 'sigge' ? 'Sigge' : 'Kurre')
+    const face = document.createElement('span')
+    face.className = 'rabbit-icon-face'
+    icon.append(face)
+    return icon
+  }
+
+  function renderHighscores(entries: HighscoreEntry[]): void {
+    if (!elHighscoreList) {
+      return
+    }
+
+    elHighscoreList.replaceChildren()
+    if (entries.length === 0) {
+      const empty = document.createElement('li')
+      empty.className = 'highscore-empty'
+      empty.textContent = 'Ingen har klarat en natt ännu.'
+      elHighscoreList.append(empty)
+      return
+    }
+
+    entries.forEach((entry, index) => {
+      const item = document.createElement('li')
+      item.className = 'highscore-item'
+      if (entry.id === submittedHighscoreId) {
+        item.classList.add('highscore-item--current')
+      }
+
+      const rank = document.createElement('span')
+      rank.className = 'highscore-rank'
+      rank.textContent = `${index + 1}.`
+
+      const name = document.createElement('span')
+      name.className = 'highscore-player'
+      name.textContent = entry.name
+
+      const score = document.createElement('span')
+      score.className = 'highscore-score'
+      score.textContent = `${entry.nights} ${entry.nights === 1 ? 'natt' : 'nätter'}`
+
+      item.append(rank, createRabbitIcon(entry.rabbit), name, score)
+      elHighscoreList.append(item)
+    })
+  }
+
+  function highscoreSourceLabel(source: HighscoreSource): string {
+    return source === 'supabase' ? 'Gemensam topplista' : 'Visar lokal reservlista'
+  }
+
+  async function refreshHighscores(statusOverride?: string): Promise<void> {
+    const generation = highscoreViewGeneration
+    if (!statusOverride && elHighscoreStatus) {
+      elHighscoreStatus.textContent = 'Läser topplistan…'
+    }
+    const result = await fetchHighscores()
+    if (generation !== highscoreViewGeneration || !gameOver) {
+      return
+    }
+    renderHighscores(result.entries)
+    if (elHighscoreStatus) {
+      elHighscoreStatus.textContent = statusOverride ?? highscoreSourceLabel(result.source)
+    }
+  }
+
+  function prepareHighscoreForm(): void {
+    highscoreViewGeneration += 1
+    if (elHighscoreName) {
+      try {
+        elHighscoreName.value = localStorage.getItem('rabbit-highscore-player-name') ?? ''
+      } catch {
+        elHighscoreName.value = ''
+      }
+      elHighscoreName.disabled = false
+    }
+    if (elHighscoreSubmit) {
+      elHighscoreSubmit.disabled = false
+      elHighscoreSubmit.textContent = 'Spara'
+    }
+    if (elHighscoreStatus) {
+      elHighscoreStatus.textContent = 'Läser topplistan…'
+    }
+  }
+
+  async function submitHighscore(event: SubmitEvent): Promise<void> {
+    event.preventDefault()
+    if (!finishedRun || !elHighscoreName || !elHighscoreSubmit || submittedHighscoreId) {
+      return
+    }
+
+    const name = sanitizeHighscoreName(elHighscoreName.value)
+    if (!name) {
+      elHighscoreName.focus()
+      if (elHighscoreStatus) {
+        elHighscoreStatus.textContent = 'Skriv in ett namn först.'
+      }
+      return
+    }
+
+    elHighscoreName.value = name
+    elHighscoreName.disabled = true
+    elHighscoreSubmit.disabled = true
+    elHighscoreSubmit.textContent = 'Sparar…'
+    if (elHighscoreStatus) {
+      elHighscoreStatus.textContent = 'Sparar resultatet…'
+    }
+
+    try {
+      const result = await saveHighscore(name, finishedRun.nights, finishedRun.rabbit)
+      if (!gameOver) {
+        return
+      }
+      submittedHighscoreId = result.entry.id
+      try {
+        localStorage.setItem('rabbit-highscore-player-name', name)
+      } catch {
+        // Namnet behöver inte kommas ihåg för att poängen ska kunna sparas.
+      }
+      elHighscoreSubmit.textContent = 'Sparad'
+      const message = result.source === 'supabase'
+        ? 'Resultatet är sparat i den gemensamma topplistan.'
+        : 'Resultatet sparades på den här enheten. Nätlistan kunde inte nås.'
+      await refreshHighscores(message)
+    } catch (error) {
+      elHighscoreName.disabled = false
+      elHighscoreSubmit.disabled = false
+      elHighscoreSubmit.textContent = 'Spara'
+      if (elHighscoreStatus) {
+        elHighscoreStatus.textContent = error instanceof Error ? error.message : 'Resultatet kunde inte sparas.'
+      }
+    }
+  }
+
   function reduceEnergy(amount: number) {
     if (gameOver || amount <= 0) {
       return
@@ -2017,11 +2231,15 @@ function main() {
     if (energy <= 0) {
       gameOver = true
       energy = 0
+      finishedRun = { nights: survivedNights, rabbit: selectedCharacter }
+      submittedHighscoreId = null
       if (elGameOverDetail) {
         const playerName = selectedCharacter === 'sigge' ? 'Sigge' : 'Kurre'
         elGameOverDetail.textContent = `${playerName} överlevde ${survivedNights} ${survivedNights === 1 ? 'natt' : 'nätter'}.`
       }
+      prepareHighscoreForm()
       elGameOverDialog?.classList.remove('gameover-dialog--hidden')
+      void refreshHighscores()
       pVel.set(0, 0, 0)
       airborneForwardSpeed = 0
       resetTouchControls()
@@ -2056,6 +2274,52 @@ function main() {
       const speedText = speedPotionLeft > 0 ? ` · Fart ${Math.ceil(speedPotionLeft)} s` : ''
       elItems.textContent = `Rustning ${armorCharges}/${ARMOR_MAX}${shieldText}${speedText}`
     }
+  }
+
+  let performanceSampleSeconds = 0
+  let performanceSampleFrames = 0
+  let fastPerformanceSamples = 0
+
+  function applyRendererPixelRatio(nextPixelRatio: number) {
+    const rounded = Math.round(nextPixelRatio * 100) / 100
+    if (Math.abs(rounded - rendererPixelRatio) < 0.01) {
+      return
+    }
+    rendererPixelRatio = rounded
+    renderer.setPixelRatio(rendererPixelRatio)
+    renderer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  function updateAdaptiveRenderQuality(dt: number) {
+    if (!titleStarted || document.hidden) {
+      return
+    }
+    performanceSampleSeconds += dt
+    performanceSampleFrames += 1
+    if (performanceSampleSeconds < 2.5) {
+      return
+    }
+
+    const fps = performanceSampleFrames / performanceSampleSeconds
+    performanceSampleSeconds = 0
+    performanceSampleFrames = 0
+
+    if (fps < 48 && rendererPixelRatio > renderProfile.minPixelRatio + 0.01) {
+      fastPerformanceSamples = 0
+      applyRendererPixelRatio(Math.max(renderProfile.minPixelRatio, rendererPixelRatio - 0.2))
+      return
+    }
+
+    if (fps > 58 && rendererPixelRatio < renderProfile.maxPixelRatio - 0.01) {
+      fastPerformanceSamples += 1
+      if (fastPerformanceSamples >= 4) {
+        fastPerformanceSamples = 0
+        applyRendererPixelRatio(Math.min(renderProfile.maxPixelRatio, rendererPixelRatio + 0.1))
+      }
+      return
+    }
+
+    fastPerformanceSamples = 0
   }
 
   function onResize() {
@@ -2300,6 +2564,9 @@ function main() {
   }
 
   function restartGame() {
+    highscoreViewGeneration += 1
+    finishedRun = null
+    submittedHighscoreId = null
     energy = START_ENERGY
     gameOver = false
     onGround = true
@@ -2371,6 +2638,9 @@ function main() {
     last = performance.now() / 1000
   }
 
+  elHighscoreForm?.addEventListener('submit', (event) => {
+    void submitHighscore(event)
+  })
   elRestart?.addEventListener('click', restartGame)
 
   function updateNpcRabbits(dt: number, now: number) {
@@ -2461,6 +2731,7 @@ function main() {
       renderer.render(scene, camera)
       return
     }
+    updateAdaptiveRenderQuality(dt)
     updateDayNight(dt)
     updateItemHud(dt)
     if (foxBiteCooldown > 0) {
@@ -2653,7 +2924,7 @@ function main() {
       if (safe) {
         startFoxSniff()
       } else {
-        const siggeToFox = foxG.position.clone().sub(siggeG.position)
+        const siggeToFox = foxToPlayer.copy(foxG.position).sub(siggeG.position)
         siggeToFox.y = 0
         if (siggeToFox.lengthSq() < 0.001) {
           siggeToFox.set(Math.sin(foxG.rotation.y), 0, Math.cos(foxG.rotation.y))
@@ -2670,7 +2941,7 @@ function main() {
         foxG.rotation.y = Math.atan2(siggeG.position.x - foxG.position.x, siggeG.position.z - foxG.position.z)
         if (
           foxBiteCooldown <= 0 &&
-          new THREE.Vector2(foxG.position.x, foxG.position.z).distanceTo(new THREE.Vector2(nx, nz)) <= FOX_BITE
+          Math.hypot(foxG.position.x - nx, foxG.position.z - nz) <= FOX_BITE
         ) {
           receiveBite(FOX_BITE_DAMAGE)
           foxBiteCooldown = FOX_BITE_COOLDOWN
@@ -2703,7 +2974,7 @@ function main() {
       if (safe) {
         startCatSniff()
       } else {
-        const siggeToCat = catG.position.clone().sub(siggeG.position)
+        const siggeToCat = catToPlayer.copy(catG.position).sub(siggeG.position)
         siggeToCat.y = 0
         if (siggeToCat.lengthSq() < 0.001) {
           siggeToCat.set(Math.sin(catG.rotation.y), 0, Math.cos(catG.rotation.y))
@@ -2720,7 +2991,7 @@ function main() {
         catG.rotation.y = Math.atan2(siggeG.position.x - catG.position.x, siggeG.position.z - catG.position.z)
         if (
           catBiteCooldown <= 0 &&
-          new THREE.Vector2(catG.position.x, catG.position.z).distanceTo(new THREE.Vector2(nx, nz)) <= CAT_BITE
+          Math.hypot(catG.position.x - nx, catG.position.z - nz) <= CAT_BITE
         ) {
           receiveBite(CAT_BITE_DAMAGE)
           catBiteCooldown = CAT_BITE_COOLDOWN
@@ -2749,23 +3020,18 @@ function main() {
     audio.update(foxMode === 'chase' || foxMode === 'sniff' || catMode === 'chase' || catMode === 'sniff')
 
     // Kamera: följer bakom Sigge, men kan vridas fritt på mobil.
-    const f = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))
-    const back = f.clone().multiplyScalar(-1)
+    cameraForward.set(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))
+    cameraBack.copy(cameraForward).multiplyScalar(-1)
     const dist = 4.35
     const horizontalDist = Math.cos(cameraPitch) * dist
-    const camP = new THREE.Vector3(
-      siggeG.position.x + back.x * horizontalDist,
+    cameraPosition.set(
+      siggeG.position.x + cameraBack.x * horizontalDist,
       siggeG.position.y + 1.15 + Math.sin(cameraPitch) * dist,
-      siggeG.position.z + back.z * horizontalDist,
+      siggeG.position.z + cameraBack.z * horizontalDist,
     )
-    camera.position.lerp(camP, 0.18)
-    camera.lookAt(
-      new THREE.Vector3(
-        siggeG.position.x,
-        siggeG.position.y + 0.3,
-        siggeG.position.z,
-      ),
-    )
+    camera.position.lerp(cameraPosition, 0.18)
+    cameraTarget.set(siggeG.position.x, siggeG.position.y + 0.3, siggeG.position.z)
+    camera.lookAt(cameraTarget)
     updateNpcGreeting(dt)
 
     if (elEnergy) {

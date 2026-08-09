@@ -91,7 +91,6 @@ type NeighborhoodResult = {
   hutches: HutchZone[]
   spawns: Record<'sigge' | 'kurre', THREE.Vector3>
   carrotPatches: THREE.Vector2[]
-  windowLights: THREE.PointLight[]
   windowMaterials: THREE.MeshStandardMaterial[]
 }
 
@@ -210,7 +209,6 @@ function addWindow(
   facing: 1 | -1,
   trim: THREE.Material,
   glass: THREE.MeshStandardMaterial,
-  windowLights: THREE.PointLight[],
 ) {
   const frame = box(width + 0.22, height + 0.22, 0.08, trim)
   frame.position.set(x, y, z)
@@ -219,10 +217,6 @@ function addWindow(
   const mullion = box(0.055, height, 0.12, trim)
   mullion.position.set(x, y, z + facing * 0.115)
   parent.add(frame, pane, mullion)
-  const light = new THREE.PointLight(0xffb35a, 0, 7, 2)
-  light.position.set(x, y, z + facing * 0.5)
-  parent.add(light)
-  windowLights.push(light)
 }
 
 function addSideWindow(
@@ -235,7 +229,6 @@ function addSideWindow(
   facing: 1 | -1,
   trim: THREE.Material,
   glass: THREE.MeshStandardMaterial,
-  windowLights: THREE.PointLight[],
 ) {
   const frame = box(0.08, height + 0.22, width + 0.22, trim)
   frame.position.set(x, y, z)
@@ -244,16 +237,11 @@ function addSideWindow(
   const mullion = box(0.12, height, 0.055, trim)
   mullion.position.set(x + facing * 0.115, y, z)
   parent.add(frame, pane, mullion)
-  const light = new THREE.PointLight(0xffb35a, 0, 7, 2)
-  light.position.set(x + facing * 0.5, y, z)
-  parent.add(light)
-  windowLights.push(light)
 }
 
 function addSimpleHouse(
   scene: THREE.Scene,
   colliders: Box3XZ[],
-  windowLights: THREE.PointLight[],
   windowMaterials: THREE.MeshStandardMaterial[],
   x: number,
   z: number,
@@ -276,8 +264,8 @@ function addSimpleHouse(
   g.add(body, gableRoof(w + 0.65, d + 0.85, height + 0.06, height + 1.2, roof))
   const windowRows = height > 4.2 ? [1.55, 3.75] : [height * 0.58]
   for (const windowY of windowRows) {
-    addWindow(g, -w * 0.22, windowY, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass, windowLights)
-    addWindow(g, w * 0.22, windowY, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass, windowLights)
+    addWindow(g, -w * 0.22, windowY, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass)
+    addWindow(g, w * 0.22, windowY, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass)
   }
   g.position.set(x, ground, z)
   g.rotation.y = rotation
@@ -292,7 +280,6 @@ function addWhiteHouse(
   scene: THREE.Scene,
   colliders: Box3XZ[],
   platforms: RaisedPlatform[],
-  windowLights: THREE.PointLight[],
   windowMaterials: THREE.MeshStandardMaterial[],
 ) {
   const [x, z] = orthoPoint([405, 1000])
@@ -345,15 +332,15 @@ function addWhiteHouse(
   doorWindow.position.set(0, 1.52, d / 2 + 0.205)
   g.add(doorFrame, door, doorWindow)
   for (const [wx, wy] of [[-4.2, 1.65], [4.2, 1.65], [-1.45, 4.35], [1.45, 4.35]] as [number, number][]) {
-    addWindow(g, wx, wy, d / 2 + 0.05, wy > 3 ? 1.05 : 1.45, wy > 3 ? 1.0 : 1.25, 1, white, glass, windowLights)
+    addWindow(g, wx, wy, d / 2 + 0.05, wy > 3 ? 1.05 : 1.45, wy > 3 ? 1.0 : 1.25, 1, white, glass)
   }
   // Övriga tre fasader: två fönsterrader på norrsidan samt gavelfönster i öst och väst.
   for (const [wx, wy] of [[-3.8, 1.65], [3.8, 1.65], [-2.0, 4.25], [2.0, 4.25]] as [number, number][]) {
-    addWindow(g, wx, wy, -d / 2 - 0.05, wy > 3 ? 1.05 : 1.35, wy > 3 ? 1.0 : 1.2, -1, white, glass, windowLights)
+    addWindow(g, wx, wy, -d / 2 - 0.05, wy > 3 ? 1.05 : 1.35, wy > 3 ? 1.0 : 1.2, -1, white, glass)
   }
   for (const facing of [-1, 1] as const) {
     for (const [wz, wy] of [[-2.25, 1.65], [2.15, 1.65], [-1.45, 4.2], [1.45, 4.2]] as [number, number][]) {
-      addSideWindow(g, facing * (w / 2 + 0.05), wy, wz, wy > 3 ? 0.95 : 1.15, wy > 3 ? 0.95 : 1.15, facing, white, glass, windowLights)
+      addSideWindow(g, facing * (w / 2 + 0.05), wy, wz, wy > 3 ? 0.95 : 1.15, wy > 3 ? 0.95 : 1.15, facing, white, glass)
     }
   }
   g.position.set(x, ground, z)
@@ -378,12 +365,12 @@ function addWhiteHouse(
   })
 }
 
-function addRedHouse(scene: THREE.Scene, colliders: Box3XZ[], windowLights: THREE.PointLight[], windowMaterials: THREE.MeshStandardMaterial[]) {
+function addRedHouse(scene: THREE.Scene, colliders: Box3XZ[], windowMaterials: THREE.MeshStandardMaterial[]) {
   const [redX, redZ] = orthoPoint([372, 470])
-  addSimpleHouse(scene, colliders, windowLights, windowMaterials, redX, redZ, orthoLength(145), orthoLength(82), 0xb92d24, 0x463a32, -0.03, 2.8)
+  addSimpleHouse(scene, colliders, windowMaterials, redX, redZ, orthoLength(145), orthoLength(82), 0xb92d24, 0x463a32, -0.03, 2.8)
   // Grå grannvilla direkt öster om det röda huset, separat enligt ortofotot.
   const [greyX, greyZ] = orthoPoint([503, 430])
-  addSimpleHouse(scene, colliders, windowLights, windowMaterials, greyX, greyZ, orthoLength(105), orthoLength(92), 0x777a75, 0x3f403d, -0.03, 2.65)
+  addSimpleHouse(scene, colliders, windowMaterials, greyX, greyZ, orthoLength(105), orthoLength(92), 0x777a75, 0x3f403d, -0.03, 2.65)
   const patioMat = new THREE.MeshStandardMaterial({ color: 0x9b8d78, roughness: 0.94 })
   const [patioX, patioZ] = orthoPoint([375, 525])
   const patio = box(orthoLength(62), 0.12, orthoLength(30), patioMat)
@@ -536,7 +523,6 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   const colliders: Box3XZ[] = []
   const platforms: RaisedPlatform[] = []
   const hedges: HedgeZone[] = []
-  const windowLights: THREE.PointLight[] = []
   const windowMaterials: THREE.MeshStandardMaterial[] = []
   addTerrain(scene)
 
@@ -549,7 +535,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   }
   const addMappedHouse = (center: OrthoPixel, widthPx: number, depthPx: number, wall: number, roof: number, rotation = 0, height = 2.7) => {
     const [x, z] = orthoPoint(center)
-    addSimpleHouse(scene, colliders, windowLights, windowMaterials, x, z, orthoLength(widthPx), orthoLength(depthPx), wall, roof, rotation, height)
+    addSimpleHouse(scene, colliders, windowMaterials, x, z, orthoLength(widthPx), orthoLength(depthPx), wall, roof, rotation, height)
   }
   const addMappedOutbuilding = (center: OrthoPixel, widthPx: number, depthPx: number, color: number, rotation = 0) => {
     const [x, z] = orthoPoint(center)
@@ -575,8 +561,8 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   addMappedRibbon([[345, 1118], [365, 1060], [385, 1015]], 25, gravel)
   addMappedRibbon([[270, 1065], [275, 985], [285, 910]], 23, gravel)
 
-  addRedHouse(scene, colliders, windowLights, windowMaterials)
-  addWhiteHouse(scene, colliders, platforms, windowLights, windowMaterials)
+  addRedHouse(scene, colliders, windowMaterials)
+  addWhiteHouse(scene, colliders, platforms, windowMaterials)
 
   // Omgivande villor, inritade som ortofotorektanglar.
   addMappedHouse([193, 285], 116, 82, 0xc49a70, 0x7d4e38, 0.04)
@@ -636,7 +622,6 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
       // Vita gården, på den fria remsan mellan huset och den östra häcken.
       new THREE.Vector2(...orthoPoint([474, 1015])),
     ],
-    windowLights,
     windowMaterials,
   }
 }
