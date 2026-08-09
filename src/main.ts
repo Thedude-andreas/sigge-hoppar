@@ -2003,6 +2003,7 @@ function main() {
           c.regrowLeft = c.regrowTotal
           setCarrotPlantGrowth(c, 0.06)
           energy = Math.min(ENERGY_MAX, energy + ENERGY_PER_CARROT)
+          audio.eat()
         }
       }
     }
@@ -2426,6 +2427,7 @@ function main() {
       if (elNpcSpeech) {
         elNpcSpeech.textContent = `Hej ${selectedCharacter === 'sigge' ? 'Sigge' : 'Kurre'}!`
       }
+      audio.chatter()
     }
 
     if (npcGreetingLeft <= 0) {
@@ -2744,8 +2746,6 @@ function main() {
       }
     }
     animateCat(catMoving, catSniffing, dt, now)
-    if (foxSniffing) audio.yap('fox')
-    if (catSniffing) audio.yap('cat')
     audio.update(foxMode === 'chase' || foxMode === 'sniff' || catMode === 'chase' || catMode === 'sniff')
 
     // Kamera: följer bakom Sigge, men kan vridas fritt på mobil.

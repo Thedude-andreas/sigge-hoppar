@@ -1,5 +1,3 @@
-type PredatorKind = 'fox' | 'cat'
-
 export class AudioDirector {
   private context: AudioContext | null = null
   private master: GainNode | null = null
@@ -8,7 +6,6 @@ export class AudioDirector {
   private danger = false
   private nextFootstepAt = 0
   private nextRustleAt = 0
-  private nextYapAt = 0
 
   start() {
     if (!this.context) {
@@ -70,17 +67,34 @@ export class AudioDirector {
   rustle() {
     const ctx = this.context
     if (!ctx || !this.master || ctx.currentTime < this.nextRustleAt) return
-    this.nextRustleAt = ctx.currentTime + 0.24
-    this.noiseBurst(ctx.currentTime, 0.19, 1750 + Math.random() * 500, 0.14)
+    this.nextRustleAt = ctx.currentTime + 0.17
+    const start = ctx.currentTime
+    // Flera torra, högfrekventa lager ger lövprassel i stället för ett enda brus.
+    this.noiseBurst(start, 0.13, 2200 + Math.random() * 700, 0.12)
+    this.noiseBurst(start + 0.032, 0.095, 3900 + Math.random() * 900, 0.105)
+    this.noiseBurst(start + 0.078, 0.075, 5600 + Math.random() * 900, 0.07)
   }
 
-  yap(kind: PredatorKind) {
+  eat() {
     const ctx = this.context
-    if (!ctx || !this.master || ctx.currentTime < this.nextYapAt) return
-    this.nextYapAt = ctx.currentTime + 0.85 + Math.random() * 0.55
-    const base = kind === 'fox' ? 245 : 310
-    this.barkPulse(ctx.currentTime, base, 0.13)
-    this.barkPulse(ctx.currentTime + 0.16, base * 1.16, 0.105)
+    if (!ctx || !this.master) return
+    const start = ctx.currentTime
+    for (let i = 0; i < 3; i++) {
+      const at = start + i * 0.105
+      this.tone(at, 185 - i * 12, 0.075, 0.095, 'triangle', 118 - i * 7)
+      this.noiseBurst(at + 0.018, 0.052, 780 + i * 170, 0.07)
+    }
+  }
+
+  chatter() {
+    const ctx = this.context
+    if (!ctx || !this.master) return
+    const start = ctx.currentTime
+    const syllables = [620, 790, 690, 865, 735, 820]
+    syllables.forEach((frequency, index) => {
+      const at = start + index * 0.082
+      this.tone(at, frequency, 0.07, 0.085, index % 2 === 0 ? 'square' : 'triangle', frequency * 0.86)
+    })
   }
 
   private scheduleHappyNote(at: number) {
@@ -139,26 +153,4 @@ export class AudioDirector {
     source.start(at)
   }
 
-  private barkPulse(at: number, frequency: number, duration: number) {
-    const ctx = this.context
-    if (!ctx || !this.master) return
-    const osc = ctx.createOscillator()
-    const filter = ctx.createBiquadFilter()
-    const gain = ctx.createGain()
-    osc.type = 'sawtooth'
-    osc.frequency.setValueAtTime(frequency * 1.28, at)
-    osc.frequency.exponentialRampToValueAtTime(frequency, at + duration)
-    filter.type = 'lowpass'
-    filter.frequency.value = kindFrequency(frequency)
-    gain.gain.setValueAtTime(0.0001, at)
-    gain.gain.exponentialRampToValueAtTime(0.16, at + 0.012)
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
-    osc.connect(filter).connect(gain).connect(this.master)
-    osc.start(at)
-    osc.stop(at + duration + 0.02)
-  }
-}
-
-function kindFrequency(base: number) {
-  return Math.max(650, base * 4.2)
 }
