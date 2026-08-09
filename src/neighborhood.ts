@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 
 export type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
+export type RaisedPlatform = { aabb: Box3XZ; topY: number }
 export type RampSpec = {
   x: number
   zBottom: number
@@ -69,6 +70,7 @@ export function terrainHeightAt(x: number, z: number): number {
 
 type NeighborhoodResult = {
   colliders: Box3XZ[]
+  platforms: RaisedPlatform[]
   hutches: HutchZone[]
   spawns: Record<'sigge' | 'kurre', THREE.Vector3>
   carrotPatches: THREE.Vector2[]
@@ -236,7 +238,13 @@ function addSimpleHouse(
   return g
 }
 
-function addWhiteHouse(scene: THREE.Scene, colliders: Box3XZ[], windowLights: THREE.PointLight[], windowMaterials: THREE.MeshStandardMaterial[]) {
+function addWhiteHouse(
+  scene: THREE.Scene,
+  colliders: Box3XZ[],
+  platforms: RaisedPlatform[],
+  windowLights: THREE.PointLight[],
+  windowMaterials: THREE.MeshStandardMaterial[],
+) {
   const [x, z] = orthoPoint([405, 1000])
   const w = 13.5
   const d = 9
@@ -290,14 +298,24 @@ function addWhiteHouse(scene: THREE.Scene, colliders: Box3XZ[], windowLights: TH
     addWindow(g, wx, wy, d / 2 + 0.05, wy > 3 ? 1.05 : 1.45, wy > 3 ? 1.0 : 1.25, 1, white, glass, windowLights)
   }
   g.position.set(x, ground, z)
-  g.rotation.y = Math.PI / 2
+  // Referensfasaden med fönster, altan och balkong vetter mot söder (+Z).
+  g.rotation.y = 0
   scene.add(g)
-  // Efter 90° rotation ligger verandan på husets östra sida och gör kollideraren asymmetrisk.
+  // Huskroppen blockerar bara sin egen rektangel; altanen är en separat plattform nedan.
   colliders.push({
-    min: new THREE.Vector2(x - d / 2 - 0.25, z - w / 2 - 0.25),
-    max: new THREE.Vector2(x + d / 2 + porchD + 0.25, z + w / 2 + 0.25),
+    min: new THREE.Vector2(x - w / 2 - 0.25, z - d / 2 - 0.25),
+    max: new THREE.Vector2(x + w / 2 + 0.25, z + d / 2 + 0.25),
     y0: ground,
     y1: ground + 7.2,
+  })
+  platforms.push({
+    aabb: {
+      min: new THREE.Vector2(x - porchW / 2, z + d / 2),
+      max: new THREE.Vector2(x + porchW / 2, z + d / 2 + porchD),
+      y0: ground,
+      y1: ground + 0.18,
+    },
+    topY: ground + 0.18,
   })
 
   // Fristående garage på höger sida, som på fasadbilden och ortofotot.
@@ -461,6 +479,7 @@ function addForest(scene: THREE.Scene) {
 
 export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   const colliders: Box3XZ[] = []
+  const platforms: RaisedPlatform[] = []
   const windowLights: THREE.PointLight[] = []
   const windowMaterials: THREE.MeshStandardMaterial[] = []
   addTerrain(scene)
@@ -497,7 +516,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   addMappedRibbon([[270, 1065], [275, 985], [285, 910]], 23, gravel)
 
   addRedHouse(scene, colliders, windowLights, windowMaterials)
-  addWhiteHouse(scene, colliders, windowLights, windowMaterials)
+  addWhiteHouse(scene, colliders, platforms, windowLights, windowMaterials)
 
   // Omgivande villor, inritade som ortofotorektanglar.
   addMappedHouse([193, 285], 116, 82, 0xc49a70, 0x7d4e38, 0.04)
@@ -546,13 +565,14 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
 
   return {
     colliders,
+    platforms,
     hutches: [siggeHutch, kurreHutch],
     spawns: { sigge: siggeHutch.spawn.clone(), kurre: kurreHutch.spawn.clone() },
     carrotPatches: [
       // Röda gården, öster om uteplatsen.
       new THREE.Vector2(...orthoPoint([492, 535])),
       // Vita gården, på den fria remsan mellan huset och den östra häcken.
-      new THREE.Vector2(...orthoPoint([470, 1015])),
+      new THREE.Vector2(...orthoPoint([474, 1015])),
     ],
     windowLights,
     windowMaterials,

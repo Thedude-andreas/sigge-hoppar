@@ -133,6 +133,41 @@ canvas {
   overflow: hidden;
 }
 
+#npc-speech {
+  position: fixed;
+  z-index: 4;
+  min-width: 5.4rem;
+  padding: 0.48rem 0.72rem;
+  border: 2px solid #3e2d1f;
+  border-radius: 999px;
+  background: #fff8df;
+  color: #2b2017;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 12px));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+
+#npc-speech::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid #3e2d1f;
+  border-bottom: 2px solid #3e2d1f;
+  background: #fff8df;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.npc-speech--hidden {
+  display: none;
+}
+
 #touch-controls {
   position: fixed;
   inset: 0;

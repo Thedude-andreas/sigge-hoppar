@@ -1189,6 +1189,7 @@ function buildScene() {
     windowLights: neighborhood.windowLights,
     windowMaterials: neighborhood.windowMaterials,
     colliders: neighborhood.colliders,
+    platforms: neighborhood.platforms,
     hutches: neighborhood.hutches,
     spawns: neighborhood.spawns,
   }
@@ -1215,6 +1216,7 @@ function main() {
   const elJumpZone = document.getElementById('jump-zone') as HTMLButtonElement | null
   const elStartScreen = document.getElementById('start-screen') as HTMLDivElement | null
   const elRotateScreen = document.getElementById('rotate-screen') as HTMLDivElement | null
+  const elNpcSpeech = document.getElementById('npc-speech') as HTMLDivElement | null
   const characterButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-character]'))
   const characterPreviews = setupCharacterPreviews()
   const elPlayerName = document.getElementById('player-name') as HTMLSpanElement | null
@@ -1241,6 +1243,7 @@ function main() {
     windowLights,
     windowMaterials,
     colliders,
+    platforms,
     hutches,
     spawns,
   } = buildScene()
@@ -1306,6 +1309,9 @@ function main() {
   let mobileStarted = !isMobileLike()
   let titleStarted = false
   let selectedCharacter: CharacterId = 'sigge'
+  let npcGreetingLeft = 0
+  let npcGreetingArmed = true
+  const npcSpeechPosition = new THREE.Vector3()
   const foxTarget = new THREE.Vector3()
   const foxLeaveTarget = new THREE.Vector3()
   const catTarget = new THREE.Vector3()
@@ -1381,6 +1387,16 @@ function main() {
       floorY = Math.max(floorY, hutch.aabb.y0 + THREE.MathUtils.lerp(hutch.ramp.yBottom, hutch.ramp.yTop, t))
     }
 
+    return floorY
+  }
+
+  function raisedPlatformFloorY(x: number, y: number, z: number): number {
+    let floorY = Number.NEGATIVE_INFINITY
+    for (const platform of platforms) {
+      if (aabb2ContainsXZ(platform.aabb, x, z) && y >= platform.topY - 0.08) {
+        floorY = Math.max(floorY, platform.topY)
+      }
+    }
     return floorY
   }
 
@@ -2196,6 +2212,9 @@ function main() {
       selectedCharacter = button.dataset.character === 'kurre' ? 'kurre' : 'sigge'
       setPlayerCharacter(selectedCharacter)
       setNpcForSelection(selectedCharacter)
+      npcGreetingLeft = 0
+      npcGreetingArmed = true
+      elNpcSpeech?.classList.add('npc-speech--hidden')
       siggeG.position.copy(spawns[selectedCharacter])
       siggeG.rotation.set(0, 0, 0)
       if (elPlayerName) {
@@ -2279,6 +2298,8 @@ function main() {
     speedPotionLeft = 0
     pickupSpawnNext = 7
     pickupMessageLeft = 0
+    npcGreetingLeft = 0
+    npcGreetingArmed = true
     pVel.set(0, 0, 0)
     siggeG.position.copy(spawns[selectedCharacter])
     siggeG.rotation.set(0, 0, 0)
@@ -2309,6 +2330,7 @@ function main() {
     elFox?.classList.add('hud-fox--hidden')
     elSafe?.classList.add('hud-safe--hidden')
     elPickup?.classList.add('hud-pickup--hidden')
+    elNpcSpeech?.classList.add('npc-speech--hidden')
     if (elEnergy) {
       elEnergy.style.width = `${(energy / ENERGY_MAX) * 100}%`
     }
@@ -2351,6 +2373,46 @@ function main() {
       rabbit.root.rotation.y = Math.atan2(dx, dz)
       rabbit.walkPhase += dt * 9.2
       rabbit.visual.position.y = 0.052 * (0.5 - 0.5 * Math.cos(rabbit.walkPhase * 2.6))
+    }
+  }
+
+  function updateNpcGreeting(dt: number) {
+    const npc = selectedCharacter === 'sigge' ? npcRabbits.kurre : npcRabbits.sigge
+    if (!npc.root.visible || !titleStarted) {
+      elNpcSpeech?.classList.add('npc-speech--hidden')
+      return
+    }
+
+    const distance = Math.hypot(
+      siggeG.position.x - npc.hutch.center.x,
+      siggeG.position.z - npc.hutch.center.z,
+    )
+    if (distance > 5.2) {
+      npcGreetingArmed = true
+    } else if (distance < 3.8 && npcGreetingArmed) {
+      npcGreetingArmed = false
+      npcGreetingLeft = 3.4
+      if (elNpcSpeech) {
+        elNpcSpeech.textContent = `Hej ${selectedCharacter === 'sigge' ? 'Sigge' : 'Kurre'}!`
+      }
+    }
+
+    if (npcGreetingLeft <= 0) {
+      elNpcSpeech?.classList.add('npc-speech--hidden')
+      return
+    }
+    npcGreetingLeft = Math.max(0, npcGreetingLeft - dt)
+    npcSpeechPosition.copy(npc.root.position)
+    npcSpeechPosition.y += 1.08
+    npcSpeechPosition.project(camera)
+    if (npcSpeechPosition.z < -1 || npcSpeechPosition.z > 1) {
+      elNpcSpeech?.classList.add('npc-speech--hidden')
+      return
+    }
+    if (elNpcSpeech) {
+      elNpcSpeech.style.left = `${(npcSpeechPosition.x * 0.5 + 0.5) * window.innerWidth}px`
+      elNpcSpeech.style.top = `${(-npcSpeechPosition.y * 0.5 + 0.5) * window.innerHeight}px`
+      elNpcSpeech.classList.remove('npc-speech--hidden')
     }
   }
 
@@ -2468,13 +2530,31 @@ function main() {
       nz = out.z
     }
 
+    // Altanen blockerar från marknivå men kan passeras när kaninen har hoppat över kanten.
+    for (const platform of platforms) {
+      if (ny >= platform.topY - 0.03) {
+        continue
+      }
+      const out = resolveCircleAabb2(
+        platform.aabb.min.x,
+        platform.aabb.min.y,
+        platform.aabb.max.x,
+        platform.aabb.max.y,
+        nx,
+        nz,
+        PLAYER_R,
+      )
+      nx = out.x
+      nz = out.z
+    }
+
     const hutchOut = resolveHutchWalls(prevX, prevZ, nx, nz)
     nx = hutchOut.x
     nz = hutchOut.z
 
     siggeG.position.x = nx
     siggeG.position.z = nz
-    const supportY = hutchFloorY(nx, nz)
+    const supportY = Math.max(hutchFloorY(nx, nz), raisedPlatformFloorY(nx, ny, nz))
     const groundedY = supportY + PLAYER_H
     if (ny <= groundedY + 0.14) {
       ny = groundedY
@@ -2634,6 +2714,7 @@ function main() {
         siggeG.position.z,
       ),
     )
+    updateNpcGreeting(dt)
 
     if (elEnergy) {
       elEnergy.style.width = `${(energy / ENERGY_MAX) * 100}%`
