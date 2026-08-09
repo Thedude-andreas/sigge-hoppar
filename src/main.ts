@@ -2582,7 +2582,9 @@ function main() {
     siggeG.position.z = nz
     const supportY = Math.max(hutchFloorY(nx, nz), raisedPlatformFloorY(nx, ny, nz))
     const groundedY = supportY + PLAYER_H
-    if (ny <= groundedY + 0.14) {
+    // Fånga bara marken när kaninen faller. Tidigare fångades även första
+    // uppåtriktade hoppsteget (<14 cm), vilket avbröt hoppet omedelbart.
+    if (pVel.y <= 0 && ny <= groundedY + 0.14) {
       ny = groundedY
       pVel.y = 0
       onGround = true
