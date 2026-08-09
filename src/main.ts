@@ -1826,7 +1826,7 @@ function main() {
   function updateRiskHud(): void {
     if (elRiskBonus) {
       const bonuses: string[] = []
-      if (cycleBoostLeft > 0) bonuses.push(`Dygn ×2 ${Math.ceil(cycleBoostLeft)} s`)
+      if (cycleBoostLeft > 0) bonuses.push(`Dygn ×4 ${Math.ceil(cycleBoostLeft)} s`)
       if (nightMultiplierLeft > 0) bonuses.push(`Nätter ×2 ${Math.ceil(nightMultiplierLeft)} s`)
       if (carrotBoostLeft > 0) bonuses.push(`Morötter ×2 ${Math.ceil(carrotBoostLeft)} s`)
       elRiskBonus.textContent = bonuses.join(' · ')
@@ -1908,22 +1908,27 @@ function main() {
     if (activeRiskChallenge !== kind) {
       return
     }
+    const timeBoostSeconds = kind === 'fox-jump'
+      ? RISK_CYCLE_BOOST_SECONDS
+      : kind === 'night-dandelion'
+        ? RISK_NIGHT_MULTIPLIER_SECONDS
+        : RISK_CARROT_BOOST_SECONDS
+    cycleBoostLeft = Math.max(cycleBoostLeft, timeBoostSeconds)
     if (kind === 'fox-jump') {
-      cycleBoostLeft = Math.max(cycleBoostLeft, RISK_CYCLE_BOOST_SECONDS)
-      riskChallengeNotice = 'Dygnet går 2× snabbare i 20 sekunder.'
+      riskChallengeNotice = 'Dygnet går 4× snabbare i 20 sekunder.'
     } else if (kind === 'night-dandelion') {
       nightMultiplierLeft = Math.max(nightMultiplierLeft, RISK_NIGHT_MULTIPLIER_SECONDS)
-      riskChallengeNotice = 'Varje avslutad natt räknas 2× i 45 sekunder.'
+      riskChallengeNotice = 'Dygnet går 4× snabbare och varje natt räknas 2× i 45 sekunder.'
       audio.eat()
     } else {
       carrotBoostLeft = Math.max(carrotBoostLeft, RISK_CARROT_BOOST_SECONDS)
-      riskChallengeNotice = 'Morötter ger 2× energi i 30 sekunder.'
+      riskChallengeNotice = 'Dygnet går 4× snabbare och morötter ger 2× energi i 30 sekunder.'
     }
     activeRiskChallenge = null
     riskChallengeTimeLeft = 0
     riskChallengePauseLeft = RISK_REWARD_PAUSE_SECONDS
     riskDandelion.visible = false
-    audio.chatter()
+    audio.celebrate()
     updateRiskHud()
   }
 
@@ -2004,7 +2009,7 @@ function main() {
   function updateDayNight(dt: number) {
     const prevNight = wasNight
     if (!gameOver) {
-      cycleClock = (cycleClock + dt * (cycleBoostLeft > 0 ? 2 : 1)) % CYCLE_SECONDS
+      cycleClock = (cycleClock + dt * (cycleBoostLeft > 0 ? 4 : 1)) % CYCLE_SECONDS
     }
     const night = isNightNow()
     if (prevNight && !night && !gameOver) {
@@ -3392,7 +3397,10 @@ function main() {
       }
     }
     animateCat(catMoving, catSniffing, dt, now)
-    audio.update(foxMode === 'chase' || foxMode === 'sniff' || catMode === 'chase' || catMode === 'sniff')
+    audio.update(
+      foxMode === 'chase' || foxMode === 'sniff' || catMode === 'chase' || catMode === 'sniff',
+      !gameOver && cycleBoostLeft > 0,
+    )
 
     // Kamera: följer bakom Sigge, men kan vridas fritt på mobil.
     cameraForward.set(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))

@@ -4,6 +4,7 @@ export class AudioDirector {
   private nextMusicAt = 0
   private musicStep = 0
   private danger = false
+  private nextFastTickAt = 0
   private nextFootstepAt = 0
   private nextRustleAt = 0
   private noiseBuffer: AudioBuffer | null = null
@@ -24,7 +25,7 @@ export class AudioDirector {
     }
   }
 
-  update(danger: boolean) {
+  update(danger: boolean, fastTime = false) {
     const ctx = this.context
     if (!ctx || !this.master || ctx.state !== 'running') return
     if (danger !== this.danger) {
@@ -37,6 +38,18 @@ export class AudioDirector {
     while (this.nextMusicAt < lookAhead) {
       if (this.danger) this.scheduleDangerNote(this.nextMusicAt)
       else this.scheduleHappyNote(this.nextMusicAt)
+    }
+
+    if (fastTime) {
+      if (this.nextFastTickAt <= 0 || this.nextFastTickAt < ctx.currentTime - 0.05) {
+        this.nextFastTickAt = ctx.currentTime + 0.025
+      }
+      while (this.nextFastTickAt < lookAhead) {
+        this.scheduleFastTimeTick(this.nextFastTickAt)
+        this.nextFastTickAt += 0.25
+      }
+    } else {
+      this.nextFastTickAt = 0
     }
   }
 
@@ -99,6 +112,21 @@ export class AudioDirector {
     })
   }
 
+  celebrate() {
+    const ctx = this.context
+    if (!ctx || !this.master) return
+    const start = ctx.currentTime + 0.015
+    const melody = [659.25, 783.99, 987.77, 1318.51]
+    melody.forEach((frequency, index) => {
+      const at = start + index * 0.095
+      this.tone(at, frequency, index === melody.length - 1 ? 0.34 : 0.12, 0.12, 'triangle', frequency * 1.015)
+    })
+    const finale = start + 0.42
+    this.tone(finale, 523.25, 0.34, 0.075, 'sine')
+    this.tone(finale, 659.25, 0.34, 0.065, 'triangle')
+    this.tone(finale, 783.99, 0.34, 0.06, 'triangle')
+  }
+
   private scheduleHappyNote(at: number) {
     const melody = [523.25, 659.25, 783.99, 659.25, 587.33, 698.46, 880, 698.46]
     const bass = [130.81, 164.81, 196, 164.81]
@@ -114,6 +142,10 @@ export class AudioDirector {
     this.tone(at, pulse[step % pulse.length], 0.2, 0.055, 'sawtooth')
     if (step % 4 === 0) this.tone(at, pulse[step % pulse.length] * 2.02, 0.11, 0.035, 'square')
     this.nextMusicAt = at + 0.19
+  }
+
+  private scheduleFastTimeTick(at: number) {
+    this.tone(at, 1380, 0.038, 0.055, 'square', 940)
   }
 
   private tone(at: number, frequency: number, duration: number, volume: number, type: OscillatorType, endFrequency = frequency) {
