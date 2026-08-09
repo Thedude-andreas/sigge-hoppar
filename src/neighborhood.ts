@@ -2,6 +2,7 @@ import * as THREE from 'three'
 
 export type Box3XZ = { min: THREE.Vector2; max: THREE.Vector2; y0: number; y1: number }
 export type RaisedPlatform = { aabb: Box3XZ; topY: number }
+export type HedgeZone = { from: THREE.Vector2; to: THREE.Vector2; halfWidth: number }
 export type RampSpec = {
   x: number
   zBottom: number
@@ -86,6 +87,7 @@ export function terrainHeightAt(x: number, z: number): number {
 type NeighborhoodResult = {
   colliders: Box3XZ[]
   platforms: RaisedPlatform[]
+  hedges: HedgeZone[]
   hutches: HutchZone[]
   spawns: Record<'sigge' | 'kurre', THREE.Vector3>
   carrotPatches: THREE.Vector2[]
@@ -178,7 +180,7 @@ function addRibbon(scene: THREE.Scene, points: [number, number][], width: number
   scene.add(road)
 }
 
-function addHedge(scene: THREE.Scene, x1: number, z1: number, x2: number, z2: number, height = 1.3, width = 0.85) {
+function addHedge(scene: THREE.Scene, x1: number, z1: number, x2: number, z2: number, height = 1.3, width = 0.85): HedgeZone {
   const length = Math.hypot(x2 - x1, z2 - z1)
   const y = Math.max(terrainHeightAt(x1, z1), terrainHeightAt(x2, z2)) + height * 0.5
   const mat = new THREE.MeshStandardMaterial({ color: 0x245d2b, roughness: 0.92 })
@@ -195,6 +197,7 @@ function addHedge(scene: THREE.Scene, x1: number, z1: number, x2: number, z2: nu
     cap.position.set(THREE.MathUtils.lerp(x1, x2, t), y + height * 0.36, THREE.MathUtils.lerp(z1, z2, t))
     scene.add(cap)
   }
+  return { from: new THREE.Vector2(x1, z1), to: new THREE.Vector2(x2, z2), halfWidth: width * 0.72 }
 }
 
 function addWindow(
@@ -218,6 +221,31 @@ function addWindow(
   parent.add(frame, pane, mullion)
   const light = new THREE.PointLight(0xffb35a, 0, 7, 2)
   light.position.set(x, y, z + facing * 0.5)
+  parent.add(light)
+  windowLights.push(light)
+}
+
+function addSideWindow(
+  parent: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  facing: 1 | -1,
+  trim: THREE.Material,
+  glass: THREE.MeshStandardMaterial,
+  windowLights: THREE.PointLight[],
+) {
+  const frame = box(0.08, height + 0.22, width + 0.22, trim)
+  frame.position.set(x, y, z)
+  const pane = box(0.1, height, width, glass)
+  pane.position.set(x + facing * 0.055, y, z)
+  const mullion = box(0.12, height, 0.055, trim)
+  mullion.position.set(x + facing * 0.115, y, z)
+  parent.add(frame, pane, mullion)
+  const light = new THREE.PointLight(0xffb35a, 0, 7, 2)
+  light.position.set(x + facing * 0.5, y, z)
   parent.add(light)
   windowLights.push(light)
 }
@@ -318,6 +346,15 @@ function addWhiteHouse(
   g.add(doorFrame, door, doorWindow)
   for (const [wx, wy] of [[-4.2, 1.65], [4.2, 1.65], [-1.45, 4.35], [1.45, 4.35]] as [number, number][]) {
     addWindow(g, wx, wy, d / 2 + 0.05, wy > 3 ? 1.05 : 1.45, wy > 3 ? 1.0 : 1.25, 1, white, glass, windowLights)
+  }
+  // Övriga tre fasader: två fönsterrader på norrsidan samt gavelfönster i öst och väst.
+  for (const [wx, wy] of [[-3.8, 1.65], [3.8, 1.65], [-2.0, 4.25], [2.0, 4.25]] as [number, number][]) {
+    addWindow(g, wx, wy, -d / 2 - 0.05, wy > 3 ? 1.05 : 1.35, wy > 3 ? 1.0 : 1.2, -1, white, glass, windowLights)
+  }
+  for (const facing of [-1, 1] as const) {
+    for (const [wz, wy] of [[-2.25, 1.65], [2.15, 1.65], [-1.45, 4.2], [1.45, 4.2]] as [number, number][]) {
+      addSideWindow(g, facing * (w / 2 + 0.05), wy, wz, wy > 3 ? 0.95 : 1.15, wy > 3 ? 0.95 : 1.15, facing, white, glass, windowLights)
+    }
   }
   g.position.set(x, ground, z)
   // Referensfasaden med fönster, altan och balkong vetter mot söder (+Z).
@@ -498,6 +535,7 @@ function addForest(scene: THREE.Scene) {
 export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   const colliders: Box3XZ[] = []
   const platforms: RaisedPlatform[] = []
+  const hedges: HedgeZone[] = []
   const windowLights: THREE.PointLight[] = []
   const windowMaterials: THREE.MeshStandardMaterial[] = []
   addTerrain(scene)
@@ -520,7 +558,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   const addMappedHedge = (from: OrthoPixel, to: OrthoPixel, height = 1.3, widthPx = 6) => {
     const [x1, z1] = orthoPoint(from)
     const [x2, z2] = orthoPoint(to)
-    addHedge(scene, x1, z1, x2, z2, height, orthoLength(widthPx))
+    hedges.push(addHedge(scene, x1, z1, x2, z2, height, orthoLength(widthPx)))
   }
 
   // Vägar och gångvägar följer inmätta mittlinjer i ortofotot.
@@ -531,7 +569,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   addMappedRibbon([[0, 1078], [100, 1076], [205, 1068], [286, 1067], [320, 1045], [322, 930]], 42, asphalt, 0.12)
   // Lokalgatan fortsätter österut söder om vita tomten och svänger upp vid tomtgränsen.
   addMappedRibbon([[0, 1138], [100, 1144], [205, 1130], [292, 1128], [380, 1138], [475, 1138], [520, 1100], [520, 1010]], 42, asphalt, 0.12)
-  addMappedRibbon([[318, 930], [338, 885]], 35, asphalt)
+  // Ingen asfalterad anslutning till Kurres bur; där är gräsmatta enligt ortofotot.
   addMappedRibbon([[270, 352], [282, 405], [292, 455]], 23, gravel)
   addMappedRibbon([[445, 335], [455, 385], [468, 440]], 24, gravel)
   addMappedRibbon([[345, 1118], [365, 1060], [385, 1015]], 25, gravel)
@@ -589,6 +627,7 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   return {
     colliders,
     platforms,
+    hedges,
     hutches: [siggeHutch, kurreHutch],
     spawns: { sigge: siggeHutch.spawn.clone(), kurre: kurreHutch.spawn.clone() },
     carrotPatches: [

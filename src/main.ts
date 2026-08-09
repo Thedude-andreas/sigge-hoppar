@@ -1,7 +1,8 @@
 import './style.css'
 import * as THREE from 'three'
+import { AudioDirector } from './audio'
 import { BUILD_TAG } from './version'
-import { buildNeighborhood, terrainHeightAt, WORLD_HALF_X, WORLD_HALF_Z, type HutchZone } from './neighborhood'
+import { buildNeighborhood, terrainHeightAt, WORLD_HALF_X, WORLD_HALF_Z, type HedgeZone, type HutchZone } from './neighborhood'
 
 /* --- Constant world layout --- */
 const INNER = WORLD_HALF_X
@@ -102,6 +103,16 @@ declare global {
 
 function aabb2ContainsXZ(b: Box3XZ, x: number, z: number): boolean {
   return x >= b.min.x && x <= b.max.x && z >= b.min.y && z <= b.max.y
+}
+
+function distanceToHedge(zone: HedgeZone, x: number, z: number): number {
+  const dx = zone.to.x - zone.from.x
+  const dz = zone.to.y - zone.from.y
+  const lengthSq = dx * dx + dz * dz
+  const t = lengthSq > 0
+    ? THREE.MathUtils.clamp(((x - zone.from.x) * dx + (z - zone.from.y) * dz) / lengthSq, 0, 1)
+    : 0
+  return Math.hypot(x - (zone.from.x + dx * t), z - (zone.from.y + dz * t))
 }
 
 /** Cirkel (x,z) med radie r så att den inte korsar inre av en axis-aligned rektangel i xz. */
@@ -1195,6 +1206,7 @@ function buildScene() {
     windowMaterials: neighborhood.windowMaterials,
     colliders: neighborhood.colliders,
     platforms: neighborhood.platforms,
+    hedges: neighborhood.hedges,
     hutches: neighborhood.hutches,
     spawns: neighborhood.spawns,
   }
@@ -1249,9 +1261,11 @@ function main() {
     windowMaterials,
     colliders,
     platforms,
+    hedges,
     hutches,
     spawns,
   } = buildScene()
+  const audio = new AudioDirector()
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200)
   const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -2222,6 +2236,7 @@ function main() {
 
   for (const button of characterButtons) {
     button.addEventListener('click', async () => {
+      audio.start()
       selectedCharacter = button.dataset.character === 'kurre' ? 'kurre' : 'sigge'
       setPlayerCharacter(selectedCharacter)
       setNpcForSelection(selectedCharacter)
@@ -2526,6 +2541,7 @@ function main() {
       pVel.y = JUMP_V
       onGround = false
       jumpBufferLeft = 0
+      audio.jump()
     }
     if (!onGround && airborneForwardSpeed > 0) {
       // Ett hopp är alltid ett riktat skutt framåt. Varje snabb landning–hopp-
@@ -2600,6 +2616,10 @@ function main() {
     if (strolling) {
       hopPhase += dt * 11.5
       siggeVisual.position.y = 0.1 * (0.5 - 0.5 * Math.cos(hopPhase * 2.6))
+      audio.footstep(Math.abs(moveAmount))
+      if (hedges.some((hedge) => distanceToHedge(hedge, nx, nz) <= hedge.halfWidth + PLAYER_R * 0.45)) {
+        audio.rustle()
+      }
     } else {
       hopPhase = THREE.MathUtils.lerp(hopPhase, 0, dt * 4)
       siggeVisual.position.y = THREE.MathUtils.lerp(siggeVisual.position.y, 0, Math.min(1, dt * 12))
@@ -2724,6 +2744,9 @@ function main() {
       }
     }
     animateCat(catMoving, catSniffing, dt, now)
+    if (foxSniffing) audio.yap('fox')
+    if (catSniffing) audio.yap('cat')
+    audio.update(foxMode === 'chase' || foxMode === 'sniff' || catMode === 'chase' || catMode === 'sniff')
 
     // Kamera: följer bakom Sigge, men kan vridas fritt på mobil.
     const f = new THREE.Vector3(Math.sin(cameraYaw), 0, Math.cos(cameraYaw))
