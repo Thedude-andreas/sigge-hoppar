@@ -107,8 +107,10 @@ function gableRoof(w: number, d: number, eaveY: number, ridgeY: number, mat: THR
 }
 
 function addTerrain(scene: THREE.Scene) {
-  const cols = 32
-  const rows = 46
+  // Tätare nät gör att den renderade terrängen följer samma höjdfunktion som
+  // vägarna. Med det tidigare grova nätet kunde gröna trianglar skära igenom asfalt.
+  const cols = 72
+  const rows = 120
   const positions: number[] = []
   const colors: number[] = []
   const indices: number[] = []
@@ -144,7 +146,7 @@ function addTerrain(scene: THREE.Scene) {
   scene.add(ground)
 }
 
-function addRibbon(scene: THREE.Scene, points: [number, number][], width: number, material: THREE.Material, lift = 0.035) {
+function addRibbon(scene: THREE.Scene, points: [number, number][], width: number, material: THREE.Material, lift = 0.1) {
   const curve = new THREE.CatmullRomCurve3(points.map(([x, z]) => new THREE.Vector3(x, 0, z)), false, 'centripetal')
   const segments = Math.max(10, points.length * 8)
   const positions: number[] = []
@@ -171,6 +173,7 @@ function addRibbon(scene: THREE.Scene, points: [number, number][], width: number
   geo.computeVertexNormals()
   const road = new THREE.Mesh(geo, material)
   road.receiveShadow = true
+  road.renderOrder = 2
   scene.add(road)
 }
 
@@ -498,11 +501,11 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   const windowMaterials: THREE.MeshStandardMaterial[] = []
   addTerrain(scene)
 
-  const asphalt = new THREE.MeshStandardMaterial({ color: 0x555754, roughness: 0.98 })
-  const gcShoulder = new THREE.MeshStandardMaterial({ color: 0x968e7c, roughness: 1 })
-  const gcAsphalt = new THREE.MeshStandardMaterial({ color: 0x5d615e, roughness: 0.98 })
-  const gravel = new THREE.MeshStandardMaterial({ color: 0x9b927f, roughness: 1 })
-  const addMappedRibbon = (pixels: OrthoPixel[], widthPixels: number, material: THREE.Material, lift = 0.035) => {
+  const asphalt = new THREE.MeshStandardMaterial({ color: 0x4c504e, roughness: 0.98, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 })
+  const gcShoulder = new THREE.MeshStandardMaterial({ color: 0xa29986, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -3 })
+  const gcAsphalt = new THREE.MeshStandardMaterial({ color: 0x525755, roughness: 0.98, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -5 })
+  const gravel = new THREE.MeshStandardMaterial({ color: 0xa69c87, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -3 })
+  const addMappedRibbon = (pixels: OrthoPixel[], widthPixels: number, material: THREE.Material, lift = 0.1) => {
     addRibbon(scene, pixels.map(orthoPoint), orthoLength(widthPixels), material, lift)
   }
   const addMappedHouse = (center: OrthoPixel, widthPx: number, depthPx: number, wall: number, roof: number, rotation = 0, height = 2.7) => {
@@ -520,12 +523,13 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   }
 
   // Vägar och gångvägar följer inmätta mittlinjer i ortofotot.
-  addMappedRibbon([[0, 352], [160, 360], [330, 348], [500, 326], [709, 305]], 48, asphalt)
+  addMappedRibbon([[0, 352], [160, 360], [330, 348], [500, 326], [709, 305]], 48, asphalt, 0.12)
   // GC-vägen mellan tomterna får en grusad skuldra och fri sikt genom skogsbältet.
-  addMappedRibbon(GC_CENTERLINE_PX, 29, gcShoulder, 0.025)
-  addMappedRibbon(GC_CENTERLINE_PX, 19, gcAsphalt, 0.05)
-  addMappedRibbon([[0, 1078], [100, 1076], [205, 1068], [286, 1067], [320, 1045], [322, 930]], 42, asphalt)
-  addMappedRibbon([[0, 1138], [100, 1144], [205, 1130], [292, 1128], [340, 1108]], 42, asphalt)
+  addMappedRibbon(GC_CENTERLINE_PX, 29, gcShoulder, 0.09)
+  addMappedRibbon(GC_CENTERLINE_PX, 19, gcAsphalt, 0.14)
+  addMappedRibbon([[0, 1078], [100, 1076], [205, 1068], [286, 1067], [320, 1045], [322, 930]], 42, asphalt, 0.12)
+  // Lokalgatan fortsätter österut söder om vita tomten och svänger upp vid tomtgränsen.
+  addMappedRibbon([[0, 1138], [100, 1144], [205, 1130], [292, 1128], [380, 1138], [475, 1138], [520, 1100], [520, 1010]], 42, asphalt, 0.12)
   addMappedRibbon([[318, 930], [338, 885]], 35, asphalt)
   addMappedRibbon([[270, 352], [282, 405], [292, 455]], 23, gravel)
   addMappedRibbon([[445, 335], [455, 385], [468, 440]], 24, gravel)

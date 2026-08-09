@@ -10,8 +10,13 @@ const SIGGE_SCALE = 0.72
 const PLAYER_H = 0
 const PLAYER_R = 0.29
 const GRAVITY = 18
-const JUMP_V = 7.2
+const JUMP_V = 7.4
 const MOVE = 5.7
+const JUMP_FORWARD_BASE = 7.1
+const JUMP_FORWARD_STEP = 1.05
+const JUMP_FORWARD_MAX = 10.25
+const JUMP_CHAIN_WINDOW = 1.25
+const JUMP_BUFFER_SECONDS = 0.2
 const FOX_SPD = 4.9
 const FOX_TIMER_MIN = 8
 const FOX_TIMER_MAX = 18
@@ -1273,8 +1278,9 @@ function main() {
     lastX: 0,
     lastY: 0,
   }
-  let touchJumpQueued = false
+  let jumpBufferLeft = 0
   const pVel = new THREE.Vector3(0, 0, 0)
+  const jumpDirection = new THREE.Vector2(0, 1)
   const foxP = new THREE.Vector3(0, 0, 12)
   const catP = new THREE.Vector3(0, 0, -12)
   /** Var Sigge tittar (Y-rotation) — kameran följer bakifrån. */
@@ -1285,6 +1291,9 @@ function main() {
   const TURN_SPD = 2.2
   let energy = START_ENERGY
   let onGround = true
+  let airborneForwardSpeed = 0
+  let jumpChain = 0
+  let lastJumpAt = Number.NEGATIVE_INFINITY
   let gameOver = false
   let foxMode: FoxMode = 'hidden'
   let foxNext = 5
@@ -1999,6 +2008,7 @@ function main() {
       }
       elGameOverDialog?.classList.remove('gameover-dialog--hidden')
       pVel.set(0, 0, 0)
+      airborneForwardSpeed = 0
       resetTouchControls()
       for (const code of Object.keys(keys)) {
         keys[code] = false
@@ -2062,6 +2072,9 @@ function main() {
   }
   window.addEventListener('keydown', (e) => {
     bindKeyFromCode(e, true)
+    if (e.code === 'Space' && !e.repeat && !gameOver) {
+      jumpBufferLeft = JUMP_BUFFER_SECONDS
+    }
   })
   window.addEventListener('keyup', (e) => {
     keys[e.code] = false
@@ -2070,7 +2083,7 @@ function main() {
   function resetTouchControls() {
     resetTouchMove()
     resetTouchCamera()
-    touchJumpQueued = false
+    jumpBufferLeft = 0
     elJumpZone?.classList.remove('touch-zone--active')
   }
 
@@ -2191,7 +2204,7 @@ function main() {
     e.preventDefault()
     elJumpZone.classList.add('touch-zone--active')
     if (!gameOver) {
-      touchJumpQueued = true
+      jumpBufferLeft = JUMP_BUFFER_SECONDS
     }
   })
   for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
@@ -2301,6 +2314,9 @@ function main() {
     npcGreetingLeft = 0
     npcGreetingArmed = true
     pVel.set(0, 0, 0)
+    airborneForwardSpeed = 0
+    jumpChain = 0
+    lastJumpAt = Number.NEGATIVE_INFINITY
     siggeG.position.copy(spawns[selectedCharacter])
     siggeG.rotation.set(0, 0, 0)
     siggeVisual.position.set(0, 0, 0)
@@ -2501,12 +2517,22 @@ function main() {
     pVel.x = moveX * speed
     pVel.z = moveZ * speed
     pVel.y -= GRAVITY * dt
-    const jumpPressed = keys['Space'] || touchJumpQueued
-    if (!gameOver && onGround && jumpPressed) {
+    jumpBufferLeft = Math.max(0, jumpBufferLeft - dt)
+    if (!gameOver && onGround && jumpBufferLeft > 0) {
+      jumpChain = now - lastJumpAt <= JUMP_CHAIN_WINDOW ? Math.min(jumpChain + 1, 3) : 0
+      lastJumpAt = now
+      airborneForwardSpeed = Math.min(JUMP_FORWARD_BASE + jumpChain * JUMP_FORWARD_STEP, JUMP_FORWARD_MAX)
+      jumpDirection.set(Math.sin(playerFacing), Math.cos(playerFacing))
       pVel.y = JUMP_V
       onGround = false
+      jumpBufferLeft = 0
     }
-    touchJumpQueued = false
+    if (!onGround && airborneForwardSpeed > 0) {
+      // Ett hopp är alltid ett riktat skutt framåt. Varje snabb landning–hopp-
+      // kedja ökar farten tills maxvärdet nås, så kaninen kan fly från rovdjur.
+      pVel.x = jumpDirection.x * airborneForwardSpeed * dt
+      pVel.z = jumpDirection.y * airborneForwardSpeed * dt
+    }
     let nx = siggeG.position.x + pVel.x
     let ny = siggeG.position.y + pVel.y * dt
     let nz = siggeG.position.z + pVel.z
@@ -2560,6 +2586,7 @@ function main() {
       ny = groundedY
       pVel.y = 0
       onGround = true
+      airborneForwardSpeed = 0
     } else {
       onGround = false
     }
