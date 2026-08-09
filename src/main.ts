@@ -1789,7 +1789,9 @@ function main() {
 
     const worldAngle = Math.atan2(dx, dz)
     const relativeAngle = Math.atan2(Math.sin(worldAngle - cameraYaw), Math.cos(worldAngle - cameraYaw))
-    const directionX = Math.sin(relativeAngle)
+    // Kameran tittar längs sin lokala -Z-axel. När dess världsframåt är +Z
+    // motsvarar därför skärmens högersida -X, inte +X.
+    const directionX = -Math.sin(relativeAngle)
     const directionY = -Math.cos(relativeAngle)
 
     const width = window.innerWidth
@@ -1816,7 +1818,7 @@ function main() {
 
     elRiskPointer.style.setProperty('--risk-pointer-x', `${centerX + directionX * edgeScale}px`)
     elRiskPointer.style.setProperty('--risk-pointer-y', `${centerY + directionY * edgeScale}px`)
-    elRiskPointerArrow.style.setProperty('--risk-pointer-angle', `${relativeAngle - Math.PI / 2}rad`)
+    elRiskPointerArrow.style.setProperty('--risk-pointer-angle', `${Math.atan2(directionY, directionX)}rad`)
     elRiskPointerDistance.textContent = `${Math.max(1, Math.ceil(distance))} m`
     elRiskPointer.classList.remove('risk-pointer--hidden')
   }
