@@ -76,6 +76,34 @@ canvas {
   background: rgba(8, 20, 10, 0.4);
 }
 
+#survival-wrap #risk-bonus {
+  border-color: rgba(255, 218, 92, 0.5);
+  background: rgba(96, 66, 5, 0.58);
+  color: #ffe889;
+  font-weight: 800;
+}
+
+#survival-wrap .risk-bonus--hidden {
+  display: none;
+}
+
+#risk-challenge {
+  width: fit-content;
+  max-width: min(92vw, 680px);
+  margin: 0 0 0.5rem;
+  padding: 0.34rem 0.58rem;
+  border: 1px solid rgba(255, 208, 86, 0.34);
+  border-radius: 7px;
+  background: rgba(48, 29, 4, 0.56);
+  color: #ffe7a3;
+  font-size: 0.76rem;
+  line-height: 1.25;
+}
+
+#risk-challenge strong {
+  color: #ffd45d;
+}
+
 #energy-wrap span {
   display: block;
   margin-bottom: 0.15rem;

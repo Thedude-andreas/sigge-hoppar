@@ -59,6 +59,10 @@ const PICKUP_SPAWN_MAX = 17
 const ARMOR_MAX = 4
 const SPEED_POTION_SECONDS = 16
 const SHIELD_POTION_SECONDS = 12
+const RISK_CYCLE_BOOST_SECONDS = 20
+const RISK_NIGHT_MULTIPLIER_SECONDS = 45
+const RISK_CARROT_BOOST_SECONDS = 30
+const RISK_REWARD_PAUSE_SECONDS = 7
 
 type RenderProfile = {
   antialias: boolean
@@ -118,6 +122,7 @@ type Pickup = {
   kind: PickupKind
   ttl: number
 }
+type RiskChallengeKind = 'fox-jump' | 'night-dandelion' | 'predator-carrot'
 
 declare global {
   interface Window {
@@ -125,8 +130,63 @@ declare global {
       setCycleClock: (seconds: number) => void
       setEnergy: (value: number) => void
       spawnPickup: (kind?: PickupKind) => void
+      setRiskChallenge: (kind: RiskChallengeKind) => void
     }
   }
+}
+
+function createRiskDandelion(): THREE.Group {
+  const group = new THREE.Group()
+  const stemMaterial = new THREE.MeshStandardMaterial({ color: 0x4f9d38, roughness: 0.82 })
+  const leafMaterial = new THREE.MeshStandardMaterial({
+    color: 0x91ee54,
+    emissive: 0x2f7d24,
+    emissiveIntensity: 0.62,
+    roughness: 0.68,
+  })
+  const flowerMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffdc42,
+    emissive: 0x8a5a00,
+    emissiveIntensity: 0.78,
+    roughness: 0.55,
+  })
+
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.45, 7), stemMaterial)
+  stem.position.y = 0.23
+  group.add(stem)
+
+  for (const side of [-1, 1]) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 5), leafMaterial)
+    leaf.scale.set(1.45, 0.15, 0.48)
+    leaf.position.set(side * 0.12, 0.1, side * 0.04)
+    leaf.rotation.y = side * 0.62
+    leaf.rotation.z = side * 0.18
+    group.add(leaf)
+  }
+
+  const flower = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 7), flowerMaterial)
+  flower.scale.set(1.35, 0.42, 1.35)
+  flower.position.y = 0.48
+  group.add(flower)
+  for (let i = 0; i < 8; i++) {
+    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.075, 7, 5), flowerMaterial)
+    const angle = (i / 8) * Math.PI * 2
+    petal.scale.set(1.5, 0.25, 0.62)
+    petal.position.set(Math.cos(angle) * 0.14, 0.47, Math.sin(angle) * 0.14)
+    petal.rotation.y = -angle
+    group.add(petal)
+  }
+
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.022, 6, 18),
+    new THREE.MeshBasicMaterial({ color: 0xffee72, fog: false }),
+  )
+  halo.position.y = 0.72
+  halo.rotation.x = Math.PI / 2
+  group.add(halo)
+
+  group.visible = false
+  return group
 }
 
 function aabb2ContainsXZ(b: Box3XZ, x: number, z: number): boolean {
@@ -1286,6 +1346,8 @@ function main() {
   const elNightCount = document.getElementById('night-count') as HTMLSpanElement | null
   const elCycle = document.getElementById('cycle-state') as HTMLSpanElement | null
   const elItems = document.getElementById('item-status') as HTMLSpanElement | null
+  const elRiskChallenge = document.getElementById('risk-challenge') as HTMLParagraphElement | null
+  const elRiskBonus = document.getElementById('risk-bonus') as HTMLSpanElement | null
   const elPickup = document.getElementById('hud-pickup') as HTMLParagraphElement | null
   const elFox = document.getElementById('hud-fox') as HTMLParagraphElement | null
   const elSafe = document.getElementById('hud-safe') as HTMLParagraphElement | null
@@ -1407,6 +1469,14 @@ function main() {
   let finishedRun: { nights: number; rabbit: CharacterId } | null = null
   let submittedHighscoreId: string | null = null
   let highscoreViewGeneration = 0
+  let activeRiskChallenge: RiskChallengeKind | null = null
+  let riskChallengeIndex = 0
+  let riskChallengeTimeLeft = 0
+  let riskChallengePauseLeft = 0
+  let riskChallengeNotice = ''
+  let cycleBoostLeft = 0
+  let nightMultiplierLeft = 0
+  let carrotBoostLeft = 0
   let npcGreetingLeft = 0
   let npcGreetingArmed = true
   const npcSpeechPosition = new THREE.Vector3()
@@ -1431,6 +1501,9 @@ function main() {
   const fogNight = new THREE.Color(0x090d1a)
   const currentSky = new THREE.Color()
   const currentFog = new THREE.Color()
+  const riskDandelion = createRiskDandelion()
+  const riskChallengeOrder: RiskChallengeKind[] = ['fox-jump', 'night-dandelion', 'predator-carrot']
+  scene.add(riskDandelion)
 
   function isMobileLike(): boolean {
     return navigator.maxTouchPoints > 0 || window.matchMedia('(hover: none), (pointer: coarse)').matches
@@ -1631,6 +1704,212 @@ function main() {
     )
   }
 
+  function riskChallengeDuration(kind: RiskChallengeKind): number {
+    return kind === 'night-dandelion' ? 95 : 55
+  }
+
+  function randomRiskDandelionPosition(): THREE.Vector3 {
+    for (let i = 0; i < 80; i++) {
+      const x = THREE.MathUtils.randFloat(-WORLD_HALF_X + 2, WORLD_HALF_X - 2)
+      const z = THREE.MathUtils.randFloat(-WORLD_HALF_Z + 2, WORLD_HALF_Z - 2)
+      const nearHouse = colliders.some((collider) => (
+        x >= collider.min.x - 0.9 && x <= collider.max.x + 0.9
+        && z >= collider.min.y - 0.9 && z <= collider.max.y + 0.9
+      ))
+      const farFromHutches = hutches.every((hutch) => Math.hypot(x - hutch.center.x, z - hutch.center.z) >= 9)
+      if (nearHouse || !farFromHutches || Math.hypot(x - siggeG.position.x, z - siggeG.position.z) < 5) {
+        continue
+      }
+      return new THREE.Vector3(x, terrainHeightAt(x, z), z)
+    }
+    return new THREE.Vector3(-INNER + 3, terrainHeightAt(-INNER + 3, -WORLD_HALF_Z + 3), -WORLD_HALF_Z + 3)
+  }
+
+  function activePredatorDistance(): number {
+    let distance = Number.POSITIVE_INFINITY
+    if (foxMode === 'chase') {
+      distance = Math.min(distance, Math.hypot(foxG.position.x - siggeG.position.x, foxG.position.z - siggeG.position.z))
+    }
+    if (catMode === 'chase') {
+      distance = Math.min(distance, Math.hypot(catG.position.x - siggeG.position.x, catG.position.z - siggeG.position.z))
+    }
+    return distance
+  }
+
+  function updateRiskHud(): void {
+    if (elRiskBonus) {
+      const bonuses: string[] = []
+      if (cycleBoostLeft > 0) bonuses.push(`Dygn ×2 ${Math.ceil(cycleBoostLeft)} s`)
+      if (nightMultiplierLeft > 0) bonuses.push(`Nätter ×2 ${Math.ceil(nightMultiplierLeft)} s`)
+      if (carrotBoostLeft > 0) bonuses.push(`Morötter ×2 ${Math.ceil(carrotBoostLeft)} s`)
+      elRiskBonus.textContent = bonuses.join(' · ')
+      elRiskBonus.classList.toggle('risk-bonus--hidden', bonuses.length === 0)
+    }
+
+    if (!elRiskChallenge) {
+      return
+    }
+    if (!titleStarted) {
+      elRiskChallenge.innerHTML = '<strong>Riskuppdrag:</strong> välj kanin för att börja'
+      return
+    }
+    if (gameOver) {
+      elRiskChallenge.innerHTML = '<strong>Riskuppdrag:</strong> avslutat'
+      return
+    }
+    if (!activeRiskChallenge) {
+      elRiskChallenge.innerHTML = `<strong>Riskuppdrag klart!</strong> ${riskChallengeNotice}`
+      return
+    }
+
+    const seconds = Math.max(0, Math.ceil(riskChallengeTimeLeft))
+    if (activeRiskChallenge === 'fox-jump') {
+      const distance = foxMode === 'chase'
+        ? ` · räven ${Math.ceil(Math.hypot(foxG.position.x - siggeG.position.x, foxG.position.z - siggeG.position.z))} m bort`
+        : ' · vänta på räven'
+      elRiskChallenge.innerHTML = `<strong>Riskuppdrag:</strong> skutta över den jagande räven${distance} · ${seconds} s`
+      return
+    }
+    if (activeRiskChallenge === 'night-dandelion') {
+      const detail = isNightNow()
+        ? `maskrosen är ${Math.ceil(riskDandelion.position.distanceTo(siggeG.position))} m bort`
+        : 'maskrosen visar sig i natt'
+      elRiskChallenge.innerHTML = `<strong>Riskuppdrag:</strong> ät den lysande nattmaskrosen · ${detail} · ${seconds} s`
+      return
+    }
+
+    const predatorDistance = activePredatorDistance()
+    const detail = Number.isFinite(predatorDistance)
+      ? `närmaste rovdjur ${Math.ceil(predatorDistance)} m bort`
+      : 'vänta på ett rovdjur'
+    elRiskChallenge.innerHTML = `<strong>Riskuppdrag:</strong> ät en morot inom 3 m från ett jagande rovdjur · ${detail} · ${seconds} s`
+  }
+
+  function setRiskChallenge(kind: RiskChallengeKind): void {
+    activeRiskChallenge = kind
+    riskChallengeTimeLeft = riskChallengeDuration(kind)
+    riskChallengePauseLeft = 0
+    riskChallengeNotice = ''
+    riskDandelion.visible = false
+    if (kind === 'night-dandelion') {
+      riskDandelion.position.copy(randomRiskDandelionPosition())
+      riskDandelion.userData.baseY = riskDandelion.position.y
+    }
+    updateRiskHud()
+  }
+
+  function startNextRiskChallenge(): void {
+    const kind = riskChallengeOrder[riskChallengeIndex % riskChallengeOrder.length]
+    riskChallengeIndex += 1
+    setRiskChallenge(kind)
+  }
+
+  function resetRiskChallenges(): void {
+    activeRiskChallenge = null
+    riskChallengeIndex = 0
+    riskChallengeTimeLeft = 0
+    riskChallengePauseLeft = 0
+    riskChallengeNotice = ''
+    cycleBoostLeft = 0
+    nightMultiplierLeft = 0
+    carrotBoostLeft = 0
+    riskDandelion.visible = false
+    startNextRiskChallenge()
+  }
+
+  function finishRiskChallenge(kind: RiskChallengeKind): void {
+    if (activeRiskChallenge !== kind) {
+      return
+    }
+    if (kind === 'fox-jump') {
+      cycleBoostLeft = Math.max(cycleBoostLeft, RISK_CYCLE_BOOST_SECONDS)
+      riskChallengeNotice = 'Dygnet går 2× snabbare i 20 sekunder.'
+    } else if (kind === 'night-dandelion') {
+      nightMultiplierLeft = Math.max(nightMultiplierLeft, RISK_NIGHT_MULTIPLIER_SECONDS)
+      riskChallengeNotice = 'Varje avslutad natt räknas 2× i 45 sekunder.'
+      audio.eat()
+    } else {
+      carrotBoostLeft = Math.max(carrotBoostLeft, RISK_CARROT_BOOST_SECONDS)
+      riskChallengeNotice = 'Morötter ger 2× energi i 30 sekunder.'
+    }
+    activeRiskChallenge = null
+    riskChallengeTimeLeft = 0
+    riskChallengePauseLeft = RISK_REWARD_PAUSE_SECONDS
+    riskDandelion.visible = false
+    audio.chatter()
+    updateRiskHud()
+  }
+
+  function expireRiskChallenge(): void {
+    activeRiskChallenge = null
+    riskChallengeTimeLeft = 0
+    riskChallengePauseLeft = 2.5
+    riskChallengeNotice = 'Tiden gick ut – ett nytt uppdrag kommer strax.'
+    riskDandelion.visible = false
+    updateRiskHud()
+  }
+
+  function tryFinishPredatorCarrotChallenge(): void {
+    if (activeRiskChallenge === 'predator-carrot' && activePredatorDistance() <= 3) {
+      finishRiskChallenge('predator-carrot')
+    }
+  }
+
+  function updateRiskChallenges(dt: number, now: number): void {
+    if (!titleStarted) {
+      riskDandelion.visible = false
+      updateRiskHud()
+      return
+    }
+    if (gameOver) {
+      riskDandelion.visible = false
+      updateRiskHud()
+      return
+    }
+
+    cycleBoostLeft = Math.max(0, cycleBoostLeft - dt)
+    nightMultiplierLeft = Math.max(0, nightMultiplierLeft - dt)
+    carrotBoostLeft = Math.max(0, carrotBoostLeft - dt)
+
+    if (!activeRiskChallenge) {
+      riskChallengePauseLeft = Math.max(0, riskChallengePauseLeft - dt)
+      if (riskChallengePauseLeft <= 0) {
+        startNextRiskChallenge()
+      } else {
+        updateRiskHud()
+      }
+      return
+    }
+
+    riskChallengeTimeLeft = Math.max(0, riskChallengeTimeLeft - dt)
+    if (riskChallengeTimeLeft <= 0) {
+      expireRiskChallenge()
+      return
+    }
+
+    riskDandelion.visible = activeRiskChallenge === 'night-dandelion' && isNightNow()
+    if (riskDandelion.visible) {
+      riskDandelion.rotation.y += dt * 1.25
+      riskDandelion.position.y = riskDandelion.userData.baseY + Math.sin(now * 3.2) * 0.08
+      if (riskDandelion.position.distanceTo(siggeG.position) <= 0.85) {
+        finishRiskChallenge('night-dandelion')
+        return
+      }
+    }
+
+    if (
+      activeRiskChallenge === 'fox-jump'
+      && foxMode === 'chase'
+      && !onGround
+      && Math.hypot(foxG.position.x - siggeG.position.x, foxG.position.z - siggeG.position.z) <= 1.05
+      && siggeG.position.y - foxG.position.y >= 0.42
+    ) {
+      finishRiskChallenge('fox-jump')
+      return
+    }
+    updateRiskHud()
+  }
+
   function isNightNow(): boolean {
     return cycleClock >= DAY_SECONDS
   }
@@ -1638,11 +1917,11 @@ function main() {
   function updateDayNight(dt: number) {
     const prevNight = wasNight
     if (!gameOver) {
-      cycleClock = (cycleClock + dt) % CYCLE_SECONDS
+      cycleClock = (cycleClock + dt * (cycleBoostLeft > 0 ? 2 : 1)) % CYCLE_SECONDS
     }
     const night = isNightNow()
     if (prevNight && !night && !gameOver) {
-      survivedNights += 1
+      survivedNights += nightMultiplierLeft > 0 ? 2 : 1
     }
     wasNight = night
 
@@ -2080,8 +2359,10 @@ function main() {
           c.regrowTotal = THREE.MathUtils.randFloat(CARROT_REGROW_MIN, CARROT_REGROW_MAX)
           c.regrowLeft = c.regrowTotal
           setCarrotPlantGrowth(c, 0.06)
-          energy = Math.min(ENERGY_MAX, energy + ENERGY_PER_CARROT)
+          const carrotEnergy = ENERGY_PER_CARROT * (carrotBoostLeft > 0 ? 2 : 1)
+          energy = Math.min(ENERGY_MAX, energy + carrotEnergy)
           audio.eat()
+          tryFinishPredatorCarrotChallenge()
         }
       }
     }
@@ -2529,6 +2810,7 @@ function main() {
       }
       titleStarted = true
       mobileStarted = true
+      resetRiskChallenges()
       last = performance.now() / 1000
       updateMobileOverlays()
     })
@@ -2559,6 +2841,9 @@ function main() {
         } else {
           spawnPickup()
         }
+      },
+      setRiskChallenge: (kind: RiskChallengeKind) => {
+        setRiskChallenge(kind)
       },
     }
   }
@@ -2594,6 +2879,7 @@ function main() {
     speedPotionLeft = 0
     pickupSpawnNext = 7
     pickupMessageLeft = 0
+    resetRiskChallenges()
     npcGreetingLeft = 0
     npcGreetingArmed = true
     pVel.set(0, 0, 0)
@@ -2903,6 +3189,7 @@ function main() {
 
     updateNpcRabbits(dt, now)
 
+    updateRiskChallenges(dt, now)
     updateCarrots(dt)
     updatePickups(dt, now)
 
