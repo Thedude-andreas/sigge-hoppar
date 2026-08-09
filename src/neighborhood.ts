@@ -57,15 +57,30 @@ function interpolatePolylineZAtX(points: OrthoPixel[], worldX: number): number {
   return worldX < worldPoints[0][0] ? worldPoints[0][1] : worldPoints.at(-1)![1]
 }
 
-// Ortofotots norra del (röda huset) ligger högre än gc-vägen och vita huset.
+// Ortofotots norra del (röda huset) ligger högre än gc-vägen. Även vita
+// tomten har en egen platå som sluttar söderut ner mot lokalgatan.
 export function terrainHeightAt(x: number, z: number): number {
   const gcCenterZ = interpolatePolylineZAtX(GC_CENTERLINE_PX, x)
   const slopeTopZ = gcCenterZ - orthoLength(78)
   const slopeBottomZ = gcCenterZ - orthoLength(8)
-  if (z <= slopeTopZ) return 2.6
-  if (z >= slopeBottomZ) return 0
-  const t = THREE.MathUtils.smoothstep(z, slopeTopZ, slopeBottomZ)
-  return THREE.MathUtils.lerp(2.6, 0, t)
+  let redLotHeight = 0
+  if (z <= slopeTopZ) redLotHeight = 2.6
+  else if (z < slopeBottomZ) {
+    const t = THREE.MathUtils.smoothstep(z, slopeTopZ, slopeBottomZ)
+    redLotHeight = THREE.MathUtils.lerp(2.6, 0, t)
+  }
+
+  // Inmätt i ortofotots lokala pixlar. Det vita huset står på den plana
+  // gården; från dess södra gräsyta faller marken till gatan vid y≈1075.
+  const pixelX = x / ORTHO_METERS_PER_PIXEL + ORTHO_ORIGIN_PX.x
+  const pixelY = z / ORTHO_METERS_PER_PIXEL + ORTHO_ORIGIN_PX.y
+  const westEdge = THREE.MathUtils.smoothstep(pixelX, 270, 315)
+  const eastEdge = 1 - THREE.MathUtils.smoothstep(pixelX, 485, 525)
+  const northEdge = THREE.MathUtils.smoothstep(pixelY, 825, 875)
+  const streetEdge = 1 - THREE.MathUtils.smoothstep(pixelY, 1025, 1075)
+  const whiteLotHeight = 1.35 * westEdge * eastEdge * northEdge * streetEdge
+
+  return Math.max(redLotHeight, whiteLotHeight)
 }
 
 type NeighborhoodResult = {
@@ -227,8 +242,11 @@ function addSimpleHouse(
   const body = box(w, height, d, wall)
   body.position.y = height / 2
   g.add(body, gableRoof(w + 0.65, d + 0.85, height + 0.06, height + 1.2, roof))
-  addWindow(g, -w * 0.22, height * 0.58, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass, windowLights)
-  addWindow(g, w * 0.22, height * 0.58, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass, windowLights)
+  const windowRows = height > 4.2 ? [1.55, 3.75] : [height * 0.58]
+  for (const windowY of windowRows) {
+    addWindow(g, -w * 0.22, windowY, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass, windowLights)
+    addWindow(g, w * 0.22, windowY, d / 2 + 0.045, Math.min(1.2, w * 0.18), 0.82, 1, trim, glass, windowLights)
+  }
   g.position.set(x, ground, z)
   g.rotation.y = rotation
   scene.add(g)
@@ -317,10 +335,6 @@ function addWhiteHouse(
     },
     topY: ground + 0.18,
   })
-
-  // Fristående garage på höger sida, som på fasadbilden och ortofotot.
-  const [garageX, garageZ] = orthoPoint([407, 1110])
-  addSimpleHouse(scene, colliders, windowLights, windowMaterials, garageX, garageZ, 7.0, 8.2, 0xe8e2d5, 0x292929, Math.PI / 2, 2.65)
 }
 
 function addRedHouse(scene: THREE.Scene, colliders: Box3XZ[], windowLights: THREE.PointLight[], windowMaterials: THREE.MeshStandardMaterial[]) {
@@ -442,7 +456,7 @@ function addForest(scene: THREE.Scene) {
     (pixelX > 105 && pixelX < 590 && pixelY > 335 && pixelY < 620) ||
     (pixelX > 235 && pixelX < 505 && pixelY > 850 && pixelY < 1170) ||
     // Gc-vägen ska vara tydligt avläsbar genom skogen.
-    Math.abs(orthoPoint([pixelX, pixelY])[1] - interpolatePolylineZAtX(GC_CENTERLINE_PX, orthoPoint([pixelX, pixelY])[0])) < 2.6
+    Math.abs(orthoPoint([pixelX, pixelY])[1] - interpolatePolylineZAtX(GC_CENTERLINE_PX, orthoPoint([pixelX, pixelY])[0])) < 4.6
   )
   for (const [minX, minY, maxX, maxY, count] of forestRegions) {
     for (let i = 0; i < count; i++) {
@@ -485,10 +499,11 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   addTerrain(scene)
 
   const asphalt = new THREE.MeshStandardMaterial({ color: 0x555754, roughness: 0.98 })
-  const gcAsphalt = new THREE.MeshStandardMaterial({ color: 0x666966, roughness: 0.98 })
+  const gcShoulder = new THREE.MeshStandardMaterial({ color: 0x968e7c, roughness: 1 })
+  const gcAsphalt = new THREE.MeshStandardMaterial({ color: 0x5d615e, roughness: 0.98 })
   const gravel = new THREE.MeshStandardMaterial({ color: 0x9b927f, roughness: 1 })
-  const addMappedRibbon = (pixels: OrthoPixel[], widthPixels: number, material: THREE.Material) => {
-    addRibbon(scene, pixels.map(orthoPoint), orthoLength(widthPixels), material)
+  const addMappedRibbon = (pixels: OrthoPixel[], widthPixels: number, material: THREE.Material, lift = 0.035) => {
+    addRibbon(scene, pixels.map(orthoPoint), orthoLength(widthPixels), material, lift)
   }
   const addMappedHouse = (center: OrthoPixel, widthPx: number, depthPx: number, wall: number, roof: number, rotation = 0, height = 2.7) => {
     const [x, z] = orthoPoint(center)
@@ -506,7 +521,9 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
 
   // Vägar och gångvägar följer inmätta mittlinjer i ortofotot.
   addMappedRibbon([[0, 352], [160, 360], [330, 348], [500, 326], [709, 305]], 48, asphalt)
-  addMappedRibbon(GC_CENTERLINE_PX, 19, gcAsphalt)
+  // GC-vägen mellan tomterna får en grusad skuldra och fri sikt genom skogsbältet.
+  addMappedRibbon(GC_CENTERLINE_PX, 29, gcShoulder, 0.025)
+  addMappedRibbon(GC_CENTERLINE_PX, 19, gcAsphalt, 0.05)
   addMappedRibbon([[0, 1078], [100, 1076], [205, 1068], [286, 1067], [320, 1045], [322, 930]], 42, asphalt)
   addMappedRibbon([[0, 1138], [100, 1144], [205, 1130], [292, 1128], [340, 1108]], 42, asphalt)
   addMappedRibbon([[318, 930], [338, 885]], 35, asphalt)
@@ -521,7 +538,8 @@ export function buildNeighborhood(scene: THREE.Scene): NeighborhoodResult {
   // Omgivande villor, inritade som ortofotorektanglar.
   addMappedHouse([193, 285], 116, 82, 0xc49a70, 0x7d4e38, 0.04)
   addMappedHouse([368, 230], 126, 78, 0xc8785e, 0x714739, -0.03)
-  addMappedHouse([203, 515], 128, 112, 0x6f7476, 0x292d30, 0.05)
+  // Närmaste grannen väster om röda huset: ljusgrå villa i två plan.
+  addMappedHouse([203, 515], 128, 112, 0xc8cdca, 0x34383a, 0.05, 5.25)
   addMappedHouse([663, 365], 88, 92, 0x666e72, 0x292d30, Math.PI / 2)
   addMappedHouse([85, 875], 128, 92, 0xbcc0b9, 0x34393b, 0.02)
   addMappedHouse([223, 900], 118, 92, 0xaeb3ae, 0x303538, 0.04)
