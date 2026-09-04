@@ -6,6 +6,8 @@ Three.js-spel: välj Sigge eller Kurre (dvärgvädurar) och överlev dag/natt-cy
 
 Kartobjekten i `src/neighborhood.ts` anges i pixelkoordinater från det kalibrerade Lantmäteriet-ortofotot och omvandlas till spelmeter. Skalstocken ger `50 m / 371 px`, lokalt origo är ortofotopixel `(350, 660)`, X ökar åt höger/öst och Z ökar nedåt/söder. Gc-vägen har en inmätt mittlinje och terränghöjden bildar slänten enbart mellan röda tomtens södra häck och gångvägen.
 
+Lokala drönarfoton för rekonstruktion och blockout ligger i `Reference/Photography/Drone/2026-09-04/`. Råfotona är avsiktligt Git-ignorerade eftersom de omfattar cirka 1,8 GB; kopiera dem separat till arbetskopian vid behov.
+
 ## Utveckling
 
 ```bash

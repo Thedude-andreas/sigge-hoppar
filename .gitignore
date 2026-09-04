@@ -1,3 +1,6 @@
 node_modules
 dist
 .DS_Store
+
+# Large source photos are kept in the local working copy, not in the code repository.
+Reference/Photography/Drone/
